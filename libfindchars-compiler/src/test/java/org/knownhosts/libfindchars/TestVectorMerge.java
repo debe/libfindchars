@@ -1,29 +1,20 @@
 package org.knownhosts.libfindchars;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.BitSet;
-import java.util.Iterator;
 
-import org.junit.Ignore;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ByteVector;
-
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorOperators.Conversion;
-import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorShuffle;
-import jdk.incubator.vector.VectorSpecies;
 
-@Disabled
 class TestVectorMerge {
 
 	static boolean[] oddArray = new boolean[] {true,false,true,false,true,false,true,false,true,false,true,false,true,false,true,false,true,false};
@@ -33,7 +24,6 @@ class TestVectorMerge {
 
     static long MAGIC = 4292484099903637661L;
 
-    
 	
 	@Test
 	void test() {
@@ -135,7 +125,6 @@ class TestVectorMerge {
 		}
 		return -1;
 	}
-	
 	
 	
 }

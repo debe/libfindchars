@@ -1,17 +1,11 @@
 package org.knownhosts.libfindchars.compiler;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.knownhosts.libfindchars.api.AsciiLiteral;
-import org.knownhosts.libfindchars.api.AsciiLiteralGroup;
-import org.knownhosts.libfindchars.api.Literal;
-import org.knownhosts.libfindchars.api.LiteralGroup;
 import org.knownhosts.libfindchars.api.FindMask;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
 import org.sosy_lab.java_smt.api.SolverException;
@@ -43,10 +37,10 @@ class LiteralCompilerTest {
 	@Test
 	public void testCompile() throws InterruptedException, SolverException {
 		
-		var whitespaces = new AsciiLiteral("whitespace",0,"\r\n\t\f ".toCharArray());
-		var structurals = new AsciiLiteral("structurals",1,":;{}[]".toCharArray());
-		var star = new AsciiLiteral("star",2,"*".toCharArray());
-		var plus = new AsciiLiteral("plus",3,"+".toCharArray());
+		var whitespaces = new AsciiLiteral("whitespace","\r\n\t\f ".toCharArray());
+		var structurals = new AsciiLiteral("structurals",":;{}[]".toCharArray());
+		var star = new AsciiLiteral("star","*".toCharArray());
+		var plus = new AsciiLiteral("plus","+".toCharArray());
 		var group = new AsciiLiteralGroup("whitespaces",whitespaces, structurals, star, plus);
 		var result = literalCompiler.solve(group);
 		
@@ -57,17 +51,19 @@ class LiteralCompilerTest {
 	@Test
 	public void testCompileMultiple() throws InterruptedException, SolverException {
 		
-		var whitespaces = new AsciiLiteral("whitespace",0,"\r\n\t\f ".toCharArray());
-		var structurals = new AsciiLiteral("structurals",1,":;{}[]".toCharArray());
-		var star = new AsciiLiteral("star",2,"*".toCharArray());
-		var plus = new AsciiLiteral("plus",3,"+".toCharArray());
+		var whitespaces = new AsciiLiteral("whitespace","\r\n\t\f ".toCharArray());
+		var structurals = new AsciiLiteral("structurals",":;{}[]".toCharArray());
+		var star = new AsciiLiteral("star","*".toCharArray());
+		var plus = new AsciiLiteral("plus","+".toCharArray());
 		var group1 = new AsciiLiteralGroup("whitespaces",whitespaces, structurals, star, plus);
 		
-		var nums = new AsciiLiteral("nums",4,"0123456789".toCharArray());
+		var nums = new AsciiLiteral("nums","0123456789".toCharArray());
 		var group2 = new AsciiLiteralGroup("numgroup",nums);
 
-		var letters = new AsciiLiteral("letters",5,"abcdefghijk".toCharArray());
-		var group3 = new AsciiLiteralGroup("letters",letters);
+		var letters = new AsciiLiteral("letters","abcdefghijk".toCharArray());
+		var letters2 = new AsciiLiteral("letters2","lmnopqrstuvwxyz".toCharArray());
+		
+		var group3 = new AsciiLiteralGroup("letters",letters, letters2);
 
 		
 		var result = literalCompiler.solve(group1,group2,group3);
@@ -78,12 +74,13 @@ class LiteralCompilerTest {
 		assertLiteralGroup(group2, result, 1);
 		assertLiteralGroup(group3, result, 2);
 
+
 		Set<Byte> allLiterals = Sets.newHashSet();
 		for (FindMask findMask : result) {
 			allLiterals.addAll(findMask.literals().values());
 		}
 
-		Assertions.assertEquals(6,allLiterals.size());
+		Assertions.assertEquals(7,allLiterals.size());
 		
 	}
 
@@ -91,7 +88,7 @@ class LiteralCompilerTest {
 	@Test
 	public void testCompileOneBig() throws InterruptedException, SolverException {
 		
-		var whitespaces = new AsciiLiteral("whitespace",0,"+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ".toCharArray());
+		var whitespaces = new AsciiLiteral("whitespace","+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ".toCharArray());
 		var group = new AsciiLiteralGroup("whitespaces",whitespaces);
 		var result = literalCompiler.solve(group);
 		

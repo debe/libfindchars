@@ -1,0 +1,9 @@
+package ${packagename};
+
+public final class ${literalsClassName} {	
+
+#foreach( $entry in ${literals.entrySet()} )
+	public static final byte ${entry.Key} = ${entry.Value};
+#end 
+	
+}

@@ -13,14 +13,15 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
-import org.knownhosts.libfindchars.api.AsciiLiteral;
-import org.knownhosts.libfindchars.api.AsciiLiteralGroup;
 import org.knownhosts.libfindchars.api.FindMask;
+import org.knownhosts.libfindchars.api.MatchStorage;
+import org.knownhosts.libfindchars.compiler.AsciiLiteral;
+import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
 import org.knownhosts.libfindchars.compiler.LiteralCompiler;
-import org.knownhosts.libfindchars.engine.FindingEngine;
-import org.knownhosts.libfindchars.engine.FindingEngineScalar;
-import org.knownhosts.libfindchars.engine.ShuffleMaskFindOperation;
-import org.knownhosts.libfindchars.engine.ShuffleMaskFindOperationNoArray;
+import org.knownhosts.libfindchars.experiments.FindingEngine;
+import org.knownhosts.libfindchars.experiments.GeneratedEngine;
+import org.knownhosts.libfindchars.experiments.RangeFindOperation;
+import org.knownhosts.libfindchars.experiments.ShuffleMaskFindOperation;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -48,10 +49,14 @@ public class Benchie {
         public byte[] facet_payload;
         public byte[] text;
         public MemorySegment segment;
-        public AutoMemorySegment tapeSegment;
+//        public AutoMemorySegment tapeSegment;
         public MatchStorage tapeStorage;
         public FindingEngine findingEngine;
-		public FindingEngineScalar findingEngineScalar;
+        public FindingEngine findingEngineRange;
+        public FindingEngine findingEngineSandR;
+        public GeneratedEngine generatedEngineSandR;
+
+//		public FindingEngineScalar findingEngineScalar;
         public List<FindMask> findMasks;
 
         public int[] even = IntStream.range(0, 500_000).filter(x -> (x & 1) == 0).toArray();
@@ -65,21 +70,26 @@ public class Benchie {
     		var literalCompiler = new LiteralCompiler();
     		
 //    		
-//    		var whitespaces = new AsciiLiteral("whitespace",0,"\r\n\t\f ".toCharArray());
-//    		var structurals = new AsciiLiteral("structurals",1,":;{}[]".toCharArray());
-//    		var star = new AsciiLiteral("star",2,"*".toCharArray());
-//    		var plus = new AsciiLiteral("plus",3,"+".toCharArray());
-//    		var group = new AsciiLiteralGroup("whitespaces",whitespaces, structurals, star, plus);
+    		var whitespaces = new AsciiLiteral("whitespace","\r\n\t\f ".toCharArray());
+    		var structurals = new AsciiLiteral("structurals",":;{}[]".toCharArray());
+    		var star = new AsciiLiteral("star","*".toCharArray());
+    		var plus = new AsciiLiteral("plus","+".toCharArray());
+    		var group = new AsciiLiteralGroup("whitespaces",whitespaces, structurals, star, plus);
 //    		var result = literalCompiler.solve(group);
 
     		
     		
-    		var whitespaces = new AsciiLiteral("whitespace",0,"+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ".toCharArray());
-    		var group = new AsciiLiteralGroup("whitespaces",whitespaces);
+//    		var whitespaces = new AsciiLiteral("whitespace",0,"+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ".toCharArray());
+//    		var group = new AsciiLiteralGroup("whitespaces",whitespaces);
     		findMasks = literalCompiler.solve(group);
 
             findingEngine = new FindingEngine(new ShuffleMaskFindOperation(findMasks));
-            findingEngineScalar = new FindingEngineScalar("+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ");
+//            findingEngineRange = new FindingEngine(new RangeFindOperation((byte)0x61,(byte)0x7a,(byte)1));
+            findingEngineRange = new FindingEngine(new RangeFindOperation((byte)0x0,(byte)0x40,(byte)1));
+            findingEngineSandR = new FindingEngine(new ShuffleMaskFindOperation(findMasks),
+            		new RangeFindOperation((byte)0x30,(byte)0x39,(byte)1));
+            generatedEngineSandR = new GeneratedEngine();
+//            findingEngineScalar = new FindingEngineScalar("+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ");
             text = Files.readAllBytes(
                     Path.of(
                     		FindingEngine.class.getClassLoader().getResource("3mb.txt").toURI()));
@@ -111,16 +121,37 @@ public class Benchie {
 //        bh.consume(stateObj.findingEngineScalar.tokenize_bitset(stateObj.text));
 //
 //    }
-//    
+//   
+    
+//    @Benchmark
+//    public void findShuffleAndRange(Blackhole bh, StateObj stateObj) throws IOException, URISyntaxException {
+//    	var tape = stateObj.findingEngineSandR.find(stateObj.segment, stateObj.tapeStorage);
+//        bh.consume(tape.getPositionAt(stateObj.tapeStorage, 5));
+//
+//    }
+
     @Benchmark
-    public void findVectorized(Blackhole bh, StateObj stateObj) throws IOException, URISyntaxException {
-
-//        var solrMerger = new SolrMerger();
-
-    	var tape = stateObj.findingEngine.find(stateObj.segment, stateObj.tapeStorage);
+    public void findShuffleAndRangeWithGeneratedCode(Blackhole bh, StateObj stateObj) throws IOException, URISyntaxException {
+    	var tape = stateObj.generatedEngineSandR.find(stateObj.segment, stateObj.tapeStorage);
         bh.consume(tape.getPositionAt(stateObj.tapeStorage, 5));
 
-    }
+    }    
+//    
+//    @Benchmark
+//    public void findRange(Blackhole bh, StateObj stateObj) throws IOException, URISyntaxException {
+//    	var tape = stateObj.findingEngineRange.find(stateObj.segment, stateObj.tapeStorage);
+//        bh.consume(tape.getPositionAt(stateObj.tapeStorage, 5));
+//
+//    }
+//    
+//    @Benchmark
+//    public void findShuffle(Blackhole bh, StateObj stateObj) throws IOException, URISyntaxException {
+//    	var tape = stateObj.findingEngine.find(stateObj.segment, stateObj.tapeStorage);
+//        bh.consume(tape.getPositionAt(stateObj.tapeStorage, 5));
+//
+//    }
+//    
+//    
     
     
 //    @Benchmark

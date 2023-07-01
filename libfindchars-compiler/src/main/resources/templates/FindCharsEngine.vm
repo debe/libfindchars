@@ -1,0 +1,79 @@
+package ${packagename};
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.ByteOrder;
+import java.util.Arrays;
+
+import org.knownhosts.libfindchars.api.MatchDecoder;
+import org.knownhosts.libfindchars.api.MatchStorage;
+import org.knownhosts.libfindchars.api.MatchView;
+
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.ByteVector;
+
+public class ${engineClassName} {	
+
+	#foreach( $op in $ops )
+		#set( $count = $foreach.count )
+		#parse($op.getFieldsTpl())
+	#end 
+		    
+    public ${engineClassName}() {
+    	initialize();
+    }
+    
+    public MatchView find(MemorySegment mappedFile, MatchStorage tapeStorage) {
+    	var vectorByteSize = ByteVector.SPECIES_PREFERRED.vectorByteSize();
+        var decoder = new MatchDecoder();
+        var fileOffset = 0;
+        var globalCount = 0;
+        
+        for (int i = 0; i < ((int)mappedFile.byteSize() - vectorByteSize);
+        		i = i + vectorByteSize) {
+        	var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+        	tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+        	
+            var inputVec = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, mappedFile, i, ByteOrder.nativeOrder()); 
+
+            accumulator = _inlineFind(inputVec, accumulator);
+        	var count = decoder.decodePos(tapeStorage, accumulator, globalCount, fileOffset);
+        	
+        	globalCount += count;
+            fileOffset += vectorByteSize;
+        }
+        
+        // last chunk
+    	var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+        byte[] lastChunkPadded = new byte[vectorByteSize];
+        MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset,lastChunkPadded,0,(int)mappedFile.byteSize() - fileOffset);
+        tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+        var inputVec = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, lastChunkPadded, 0); 
+
+        accumulator = _inlineFind(inputVec, accumulator);
+
+    	var count = decoder.decodePos(tapeStorage, accumulator, globalCount, fileOffset);
+    	globalCount+=count;
+		
+    	return new MatchView(globalCount);
+
+    }
+
+    void initialize() {
+    	#foreach( $op in $ops )
+			#set( $count = $foreach.count )
+    		#parse($op.getInitTpl())
+		#end 
+    }
+    
+    ByteVector _inlineFind(ByteVector inputVec,  ByteVector accumulator) {
+    	#foreach( $op in $ops )
+			#set( $count = $foreach.count )	
+    		#parse($op.getInlineTpl())
+    		
+		#end 
+		return accumulator;
+    }
+ 
+    
+}
