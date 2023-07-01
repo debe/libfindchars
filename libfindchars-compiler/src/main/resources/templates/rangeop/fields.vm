@@ -1,0 +1,3 @@
+private ByteVector lowerBound_${count};
+private ByteVector upperBound_${count};
+private ByteVector literal_${count};

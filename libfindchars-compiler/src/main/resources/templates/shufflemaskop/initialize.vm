@@ -1,0 +1,35 @@
+#macro( java_array $type $array )
+new ${type}[]{##
+	#foreach($b in $array)
+$b##
+#if($foreach.count < $array.size()),#end##
+	#end
+}
+#end
+#set($type = "byte")
+
+		this.lowByteVec_${count} =  ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 0x0f);
+		this.highByteVec_${count} = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 0x7f);
+		this.lowNibbleMasks_${count} = new ByteVector[${op.FindMasks.size()}];
+		this.highNibbleMasks_${count} = new ByteVector[${op.FindMasks.size()}];
+	
+	#foreach( $findMask in $op.FindMasks )
+		#set($i = ${foreach.count} - 1)
+		this.literalMasks_${count}_${i} = new ByteVector[${findMask.literals().size()}]; 
+	#end
+		
+	#foreach( $findMask in $op.FindMasks )
+	#set($i = ${foreach.count} - 1)
+		lowNibbleMasks_${count}[$i] = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, 
+			Arrays.copyOf(#java_array($type ${findMask.lowNibbleMask()}),ByteVector.SPECIES_PREFERRED.vectorByteSize()), 0);
+		
+		highNibbleMasks_${count}[$i] = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, 
+			Arrays.copyOf(#java_array($type ${findMask.highNibbleMask()}), ByteVector.SPECIES_PREFERRED.vectorByteSize()), 0);
+		
+		#foreach( $literal in ${findMask.literals().values()} )
+		#set($j = ${foreach.count} - 1)	
+		literalMasks_${count}_${i}[$j] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, ${literal});
+		#end
+	
+	#end 
+	

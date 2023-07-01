@@ -1,0 +1,10 @@
+private ByteVector lowByteVec_${count};
+private ByteVector highByteVec_${count};
+
+private ByteVector[] lowNibbleMasks_${count};
+private ByteVector[] highNibbleMasks_${count};
+
+#foreach( $findMask in $op.FindMasks )
+#set($i = ${foreach.count} - 1)
+private ByteVector[] literalMasks_${count}_${i};
+#end

@@ -4,10 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.knownhosts.libfindchars.api.AsciiFindMask;
 import org.knownhosts.libfindchars.api.FindMask;
-import org.knownhosts.libfindchars.api.Literal;
-import org.knownhosts.libfindchars.api.LiteralGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.sosy_lab.common.ShutdownManager;
@@ -31,7 +28,7 @@ import org.sosy_lab.java_smt.api.SolverException;
 import com.google.common.collect.Lists;
 
 
-public class LiteralCompiler {
+public class LiteralCompiler implements AutoCloseable{
 	
 	private final SolverContext context;
 	private final Configuration config;
@@ -204,6 +201,13 @@ public class LiteralCompiler {
 	    
 	    return null;
 	    
+	}
+
+
+	@Override
+	public void close() throws Exception {
+		shutdown.requestShutdown("closed");
+		
 	}
 	
 }
