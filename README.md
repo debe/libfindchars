@@ -20,26 +20,26 @@ You start by generating your FindCharsEngine like this.
 
 ```java
 EngineConfiguration config = new EngineConfiguration()
-	.withTarget(new Target()
-			.withDirectory("src/main/java")
-			.withPackageName("zz.customname")
-			)
-	.withRangeOperations(new RangeOperation("comparison").withRange(0x3c, 0x3e))
-	.withShuffleOperation(
-			new ShuffleOperation()
-				.withLiteralGroups(
-						new AsciiLiteralGroup(
-								"structurals", 
-								new AsciiLiteral("whitespaces","\r\n\t\f ".toCharArray()),
-								new AsciiLiteral("punctiations",":;{}[]".toCharArray()),
-								new AsciiLiteral("star","*".toCharArray()),
-								new AsciiLiteral("plus","+".toCharArray())
-						),
-						new AsciiLiteralGroup(
-								"numbers", 
-								new AsciiLiteral("nums","0123456789".toCharArray())
-						)
-					));
+  .withTarget(new Target()
+      .withDirectory("src/main/java")
+      .withPackageName("zz.customname")
+      )
+  .withRangeOperations(new RangeOperation("comparison").withRange(0x3c, 0x3e))
+  .withShuffleOperation(
+      new ShuffleOperation()
+        .withLiteralGroups(
+            new AsciiLiteralGroup(
+                "structurals", 
+                new AsciiLiteral("whitespaces","\r\n\t\f ".toCharArray()),
+                new AsciiLiteral("punctiations",":;{}[]".toCharArray()),
+                new AsciiLiteral("star","*".toCharArray()),
+                new AsciiLiteral("plus","+".toCharArray())
+            ),
+            new AsciiLiteralGroup(
+                "numbers", 
+                new AsciiLiteral("nums","0123456789".toCharArray())
+            )
+          ));
 EngineBuilder.build(config);
 ```
 
@@ -48,29 +48,29 @@ After that find something with.
 
 ```java
 public static void main(String[] args) throws Exception {
-	
-	var findCharsEngine = new FindCharsEngine();
-	var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
-	
-	try(Arena arena = Arena.openConfined();
-		var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)){			
-		var mappedFile = channel.map(MapMode.READ_ONLY, 0, channel.size(), arena.scope());
-		var matchStorage = new MatchStorage((int)channel.size() / 7 << 1, 32);
+  
+  var findCharsEngine = new FindCharsEngine();
+  var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
+  
+  try(Arena arena = Arena.openConfined();
+    var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)){      
+    var mappedFile = channel.map(MapMode.READ_ONLY, 0, channel.size(), arena.scope());
+    var matchStorage = new MatchStorage((int)channel.size() / 7 << 1, 32);
 
-		var match = findCharsEngine.find(mappedFile, matchStorage);
+    var match = findCharsEngine.find(mappedFile, matchStorage);
 
-		for(int i = 0; i < match.size();i++) {
+    for(int i = 0; i < match.size();i++) {
 
-			switch(match.getLiteralAt(matchStorage, i)) {
-				case FindCharsLiterals.STAR -> System.out.println("* at: "+ match.getPositionAt(matchStorage, i));
-				case FindCharsLiterals.WHITESPACES -> System.out.println("\\w at: "+ match.getPositionAt(matchStorage, i));
-				case FindCharsLiterals.PUNCTIATIONS -> System.out.println("punctuations at: "+ match.getPositionAt(matchStorage, i));
-				case FindCharsLiterals.PLUS -> System.out.println("+ at: "+ match.getPositionAt(matchStorage, i));
-				case FindCharsLiterals.NUMS -> System.out.println("numbers at: "+ match.getPositionAt(matchStorage, i));
-				case FindCharsLiterals.COMPARISON -> System.out.println("<>= at: "+ match.getPositionAt(matchStorage, i));
-			}
-		}
-	}
+      switch(match.getLiteralAt(matchStorage, i)) {
+        case FindCharsLiterals.STAR -> System.out.println("* at: "+ match.getPositionAt(matchStorage, i));
+        case FindCharsLiterals.WHITESPACES -> System.out.println("\\w at: "+ match.getPositionAt(matchStorage, i));
+        case FindCharsLiterals.PUNCTIATIONS -> System.out.println("punctuations at: "+ match.getPositionAt(matchStorage, i));
+        case FindCharsLiterals.PLUS -> System.out.println("+ at: "+ match.getPositionAt(matchStorage, i));
+        case FindCharsLiterals.NUMS -> System.out.println("numbers at: "+ match.getPositionAt(matchStorage, i));
+        case FindCharsLiterals.COMPARISON -> System.out.println("<>= at: "+ match.getPositionAt(matchStorage, i));
+      }
+    }
+  }
 }
 ```
 
