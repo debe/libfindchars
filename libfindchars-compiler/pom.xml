@@ -3,7 +3,7 @@
   <parent>
     <groupId>org.knownhosts</groupId>
     <artifactId>libfindchars-parent</artifactId>
-    <version>0.0.3</version>
+    <version>0.0.4</version>
   </parent>
   
   <artifactId>libfindchars-compiler</artifactId>
@@ -13,7 +13,7 @@
 	<dependency> 
 	  <groupId>org.knownhosts</groupId>
 	  <artifactId>libfindchars-api</artifactId>
-      <version>0.0.3</version>
+      <version>${project.version}</version>
 	</dependency>
 	<dependency> 
 	  <groupId>org.slf4j</groupId>
