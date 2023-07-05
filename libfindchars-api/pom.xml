@@ -3,18 +3,54 @@
   <parent>
     <groupId>org.knownhosts</groupId>
     <artifactId>libfindchars-parent</artifactId>
-    <version>0.0.3</version>
+    <version>0.0.4</version>
   </parent>
   
-  <artifactId>libfindchars-api</artifactId>
-  <name>libfindchars</name>
-  <description>SIMD optimized runtime</description>
+  <artifactId>libfindchars-compiler</artifactId>
+  <name>libfindchars-compiler</name>
+  <description>libfindchars compiler that compiles character set into bitmasks</description>
   <dependencies>
-  	<!-- https://mvnrepository.com/artifact/com.carrotsearch/hppc -->
+	<dependency> 
+	  <groupId>org.knownhosts</groupId>
+	  <artifactId>libfindchars-api</artifactId>
+      <version>${project.version}</version>
+	</dependency>
+	<dependency> 
+	  <groupId>org.slf4j</groupId>
+	  <artifactId>slf4j-api</artifactId>
+	  <version>2.0.7</version>
+	</dependency>
+	<dependency> 
+	  <groupId>ch.qos.logback</groupId>
+	  <artifactId>logback-classic</artifactId>
+	  <version>1.3.6</version>
+	</dependency>
+	<!-- https://mvnrepository.com/artifact/org.apache.velocity/velocity-engine-core -->
 	<dependency>
-	    <groupId>com.carrotsearch</groupId>
-	    <artifactId>hppc</artifactId>
-	    <version>0.9.1</version>
+	    <groupId>org.apache.velocity</groupId>
+	    <artifactId>velocity-engine-core</artifactId>
+	    <version>2.3</version>
+	</dependency>
+	<!-- https://mvnrepository.com/artifact/org.openjdk.jmh/jmh-core -->
+	<dependency>
+	    <groupId>org.openjdk.jmh</groupId>
+	    <artifactId>jmh-core</artifactId>
+	    <version>1.36</version>
+	    <scope>test</scope>
+	</dependency>
+	<!-- https://mvnrepository.com/artifact/org.openjdk.jmh/jmh-generator-annprocess -->
+  	<dependency>
+  		<groupId>org.sosy-lab</groupId>
+  		<artifactId>java-smt</artifactId>
+  		<version>3.14.3</version>
+  	</dependency>
+	<!-- https://mvnrepository.com/artifact/org.sosy-lab/javasmt-solver-z3 -->
+	<dependency>
+	    <groupId>org.sosy-lab</groupId>
+	    <artifactId>javasmt-solver-z3</artifactId>
+	    <version>4.12.2</version>
+	    <type>jar</type>
+        <classifier>com.microsoft.z3</classifier>
 	</dependency>
   </dependencies>
 </project>
