@@ -1,0 +1,23 @@
+        	accumulator.reinterpretAsBytes().intoArray(literalCacheSparse, 0);
+    		var findMask = accumulator.compare(VectorOperators.NE, 0);
+
+    		var bits = (int) findMask.toLong();
+    		var count = findMask.trueCount();
+
+    		if (count != 0) {		
+    			var arrayOffset = globalCount;
+    	
+    			for (int k = 0; k < (count); k = k + INT_BATCH_SIZE) {
+    				
+    				for (int l = 0; l < positionCache.length; l++) {
+    					positionCache[l] = Integer.numberOfTrailingZeros(bits) & 0x1f; // modulo 32 in fast;
+    					matchStorage.getLiteralBuffer()[(arrayOffset) + l] = literalCacheSparse[positionCache[l]];
+    					bits = bits & bits - 1;
+    				}
+    				var v = IntVector.fromArray(IntVector.SPECIES_PREFERRED, positionCache, 0);
+    				var added = v.add(fileOffset);
+
+    				added.intoArray(matchStorage.getPositionsBuffer(), arrayOffset);
+    				arrayOffset += INT_BATCH_SIZE; // peek batch size
+    			}
+    		}
