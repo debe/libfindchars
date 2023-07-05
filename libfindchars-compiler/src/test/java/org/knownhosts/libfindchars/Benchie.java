@@ -54,7 +54,7 @@ public class Benchie {
         public FindingEngine findingEngine;
         public FindingEngine findingEngineRange;
         public FindingEngine findingEngineSandR;
-        public GeneratedEngine generatedEngineSandR;
+        public FindCharsEngine findCharsEngineSandR;
 
 //		public FindingEngineScalar findingEngineScalar;
         public List<FindMask> findMasks;
@@ -88,7 +88,7 @@ public class Benchie {
             findingEngineRange = new FindingEngine(new RangeFindOperation((byte)0x0,(byte)0x40,(byte)1));
             findingEngineSandR = new FindingEngine(new ShuffleMaskFindOperation(findMasks),
             		new RangeFindOperation((byte)0x30,(byte)0x39,(byte)1));
-            generatedEngineSandR = new GeneratedEngine();
+            findCharsEngineSandR = new FindCharsEngine();
 //            findingEngineScalar = new FindingEngineScalar("+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ");
             text = Files.readAllBytes(
                     Path.of(
@@ -132,7 +132,7 @@ public class Benchie {
 
     @Benchmark
     public void findShuffleAndRangeWithGeneratedCode(Blackhole bh, StateObj stateObj) throws IOException, URISyntaxException {
-    	var tape = stateObj.generatedEngineSandR.find(stateObj.segment, stateObj.tapeStorage);
+    	var tape = stateObj.findCharsEngineSandR.find(stateObj.segment, stateObj.tapeStorage);
         bh.consume(tape.getPositionAt(stateObj.tapeStorage, 5));
 
     }    
