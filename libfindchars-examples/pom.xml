@@ -14,5 +14,11 @@
 		  <artifactId>libfindchars-compiler</artifactId>
 		  <version>${project.version}</version>
 	  </dependency>
+      <dependency>
+          <groupId>org.openjdk.jmh</groupId>
+          <artifactId>jmh-core</artifactId>
+          <version>1.36</version>
+          <scope>test</scope>
+      </dependency>
   </dependencies>
 </project>

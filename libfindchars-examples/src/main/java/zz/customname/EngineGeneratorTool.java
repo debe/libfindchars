@@ -23,7 +23,7 @@ public class EngineGeneratorTool {
 								new AsciiLiteralGroup(
 										"structurals", 
 										new AsciiLiteral("whitespaces","\r\n\t\f ".toCharArray()),
-										new AsciiLiteral("punctiations",":;{}[]".toCharArray()),
+										new AsciiLiteral("punctiations",":;{}[],.".toCharArray()),
 										new AsciiLiteral("star","*".toCharArray()),
 										new AsciiLiteral("plus","+".toCharArray())
 								),

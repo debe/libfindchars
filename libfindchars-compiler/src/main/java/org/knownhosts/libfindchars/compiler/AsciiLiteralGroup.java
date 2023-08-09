@@ -2,7 +2,7 @@ package org.knownhosts.libfindchars.compiler;
 
 import java.util.List;
 
-public record AsciiLiteralGroup(String name, Literal... literals) implements LiteralGroup {
+public record AsciiLiteralGroup(String name, AsciiLiteral... asciiLiterals) implements LiteralGroup {
 
 	@Override
 	public String getName() {
@@ -10,8 +10,8 @@ public record AsciiLiteralGroup(String name, Literal... literals) implements Lit
 	}
 
 	@Override
-	public List<Literal> getLiterals() {
-		return List.of(literals);
+	public List<AsciiLiteral> getLiterals() {
+		return List.of(asciiLiterals);
 	}
 
 

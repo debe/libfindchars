@@ -14,6 +14,7 @@ import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.knownhosts.libfindchars.FindCharsEngine;
 import org.knownhosts.libfindchars.api.FindMask;
 import org.knownhosts.libfindchars.api.MatchStorage;
 import org.knownhosts.libfindchars.compiler.AsciiLiteral;
@@ -39,7 +40,7 @@ class FindingEngineTest {
 	void test() throws IOException, URISyntaxException {
 		String chars = "+;:\r\n\t\f&()!\\#$%&()*<=>?@[]^_{}~ ";
 		var scalarFinder = new FindingEngineScalar(chars);
-		var vecFinder = new FindingEngine(new ShuffleMaskFindOperation( findMasks));
+		var vecFinder = new FindCharsEngine();
 		var url = FindingEngineTest.class.getClassLoader().getResource("dummy.txt");
 		var uri = url.toURI();
 		

@@ -2,10 +2,10 @@ package org.knownhosts.libfindchars.compiler;
 
 import java.util.List;
 
-public interface LiteralGroup {
+public sealed interface LiteralGroup permits AsciiLiteralGroup, UTF8LiteralGroup{
 
 	public String getName();
 
-	public List<Literal> getLiterals();
+	public List<? extends Literal> getLiterals();
 
 }

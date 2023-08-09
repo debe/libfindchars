@@ -47,6 +47,20 @@ class LiteralCompilerTest {
 		System.out.println(result);
 		assertLiteralGroup(group, result, 0);	
 	}
+
+	@Test
+	public void testCompileUtf8() throws InterruptedException, SolverException {
+
+		var umlaute = new UTF8Literal("umlaute","üöä€".toCharArray());
+		var sz = new UTF8Literal("sz","ß".toCharArray());
+		var ws = new UTF8Literal("ws","\n\r\t ".toCharArray());
+
+		var group = new UTF8LiteralGroup("german-specials",umlaute,sz,ws);
+		var result = literalCompiler.solve(group);
+
+		System.out.println(result);
+		assertLiteralGroup(group, result, 0);
+	}
 	
 	@Test
 	public void testCompileMultiple() throws InterruptedException, SolverException {
@@ -97,12 +111,27 @@ class LiteralCompilerTest {
 	}
 	
 	
-	private void assertLiteralGroup(LiteralGroup literalGroup, List<FindMask> masks, int i) {
-		for (Literal literal : literalGroup.getLiterals()) {
+	private void assertLiteralGroup(AsciiLiteralGroup literalGroup, List<FindMask> masks, int i) {
+		for (AsciiLiteral literal : literalGroup.getLiterals()) {
 			for(char c : literal.getChars()) {
 				var nibbles = LiteralCompiler.toNibbles(c);
 				byte andResult = (byte) (masks.get(i).lowNibbleMask()[nibbles[0]] & masks.get(i).highNibbleMask()[nibbles[1]]);
 				Assertions.assertEquals(masks.get(i).getLiteral(literal.getName()), andResult);
+			}
+		}
+	}
+
+	private void assertLiteralGroup(UTF8LiteralGroup literalGroup, List<FindMask> masks, int pos) {
+		for (UTF8Literal literal : literalGroup.getLiterals()) {
+			for (int i = 0; i < literal.getChars().length; i++) {
+				char c = literal.getChars()[i];
+				var bytes = literal.decodeChar(i);
+				for (int j = 0; j < bytes.length; j++) {
+					var nibbles = LiteralCompiler.toNibbles(bytes[j]);
+					byte andResult = (byte) (masks.get(pos).lowNibbleMask()[nibbles[0]] & masks.get(pos).highNibbleMask()[nibbles[1]]);
+					System.out.println("trying to get"+ nibbles[0]+"_"+nibbles[1]);
+					Assertions.assertEquals(masks.get(pos).getLiteral("|"+nibbles[0]+"_"+nibbles[1]+"|"), andResult);
+				}
 			}
 		}
 	}

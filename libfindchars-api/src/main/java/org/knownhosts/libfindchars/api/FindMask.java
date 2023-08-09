@@ -1,12 +1,12 @@
 package org.knownhosts.libfindchars.api;
 
-import java.util.Map;
+import java.util.List;
 
 public interface FindMask {
 
-	public byte getLiteral(String literal);
+//	public byte getLiteral(String literal);
 		
-	public Map<String,Byte> literals();
+	public List<MultiByteLiteral> literals();
 		
 	public byte[] lowNibbleMask();
 	

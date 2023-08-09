@@ -49,17 +49,17 @@ private ByteVector literal_2;
 		this.literalMasks_1_1 = new ByteVector[1]; 
 		
 		lowNibbleMasks_1[0] = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, 
-			Arrays.copyOf(new byte[]{-61,-70,-70,-69,-70,-103,-102,-102,-70,69,79,103,91,87,-70,-101}
+			Arrays.copyOf(new byte[]{-30,-33,-106,-121,-126,-117,-126,-42,-125,-27,124,122,-24,105,-22,-106}
 ,ByteVector.SPECIES_PREFERRED.vectorByteSize()), 0);
 		
 		highNibbleMasks_1[0] = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, 
-			Arrays.copyOf(new byte[]{-31,-102,125,87,-102,-49,-102,-49}
+			Arrays.copyOf(new byte[]{98,-121,125,-23,-124,-20,-112,-20}
 , ByteVector.SPECIES_PREFERRED.vectorByteSize()), 0);
 		
-		literalMasks_1_0[0] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 77);
-		literalMasks_1_0[1] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 71);
-		literalMasks_1_0[2] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 101);
-		literalMasks_1_0[3] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 65);
+		literalMasks_1_0[0] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 124);
+		literalMasks_1_0[1] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 104);
+		literalMasks_1_0[2] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 120);
+		literalMasks_1_0[3] = ByteVector.broadcast(ByteVector.SPECIES_PREFERRED, 96);
 	
 		lowNibbleMasks_1[1] = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, 
 			Arrays.copyOf(new byte[]{126,126,126,126,126,126,126,126,126,126,-127,-127,-127,-127,-127,-127}
@@ -74,7 +74,7 @@ private ByteVector literal_2;
 	
 		this.lowerBound_2 = ByteVector.SPECIES_PREFERRED.broadcast(60).reinterpretAsBytes();
 		this.upperBound_2 = ByteVector.SPECIES_PREFERRED.broadcast(62).reinterpretAsBytes();
-		this.literal_2 = ByteVector.SPECIES_PREFERRED.broadcast(70).reinterpretAsBytes();
+		this.literal_2 = ByteVector.SPECIES_PREFERRED.broadcast(46).reinterpretAsBytes();
     }
 
     public MatchView find(MemorySegment mappedFile, MatchStorage matchStorage) {

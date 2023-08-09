@@ -2,12 +2,16 @@ package zz.customname;
 
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 import org.knownhosts.libfindchars.api.MatchStorage;
+import zz.customname.tokenizer.TokenStorage;
+import zz.customname.tokenizer.Tokenizer;
 
 class FindLiteralsAndPositions {
 
@@ -17,14 +21,21 @@ class FindLiteralsAndPositions {
 		var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
 		
 		try(Arena arena = Arena.openConfined();
-			var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)){			
+			var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)){
 			var mappedFile = channel.map(MapMode.READ_ONLY, 0, channel.size(), arena.scope());
 			var matchStorage = new MatchStorage((int)channel.size() / 7 << 1, 32);
+			var tokenStorage = new TokenStorage((int)channel.size() / 7 << 1, 32);
 
 			var match = findCharsEngine.find(mappedFile, matchStorage);
+			var tokenizer = new Tokenizer();
+			var tokenView = tokenizer.tokenize(match, matchStorage, tokenStorage, mappedFile);
 
+				for (int i = 0; i < tokenView.getSize(); i++) {
+				var chars = mappedFile.asSlice(tokenStorage.getPositionsBuffer()[i],tokenStorage.getSizeBuffer()[i]);
+				System.out.write(chars.toArray(ValueLayout.JAVA_BYTE));
+				System.out.print("\n");
+			}
 			for(int i = 0; i < match.size();i++) {
-
 				switch(match.getLiteralAt(matchStorage, i)) {
 					case FindCharsLiterals.STAR -> System.out.println("* at: "+ match.getPositionAt(matchStorage, i));
 					case FindCharsLiterals.WHITESPACES -> System.out.println("\\w at: "+ match.getPositionAt(matchStorage, i));
