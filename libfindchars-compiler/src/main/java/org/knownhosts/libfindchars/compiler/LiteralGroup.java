@@ -4,8 +4,8 @@ import java.util.List;
 
 public interface LiteralGroup {
 
-	public String getName();
+    String getName();
 
-	public List<Literal> getLiterals();
+    List<Literal> getLiterals();
 
 }

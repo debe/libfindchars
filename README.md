@@ -1,9 +1,9 @@
 libfindchars
 ====
 
-libfindchars is a character detection library that can find any ASCII character in byte sequences really really fast using SIMD instructions on the JVM.
+libfindchars is a character detection library that can find any ASCII character in byte sequences really fast using SIMD instructions on the JVM.
 Use cases are tokenizers, parsers or various pre-processing steps involving fast character detection.
-As it heavily utilizes the SIMD instruction set it's more useful when the input an not smaller than the typical vector size e.g. 32 bytes.
+As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
 
 Here are some tricks it uses:
  * vector shuffle mask operation which acts as lookup table hack. 

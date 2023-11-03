@@ -8,11 +8,11 @@ import com.carrotsearch.hppc.IntArrayList;
 
 public class FindingEngineScalar {
 
-	
+
     BitSet whitespaceBitset;
 
-  
-    public FindingEngineScalar(String chars){
+
+    public FindingEngineScalar(String chars) {
         whitespaceBitset = new BitSet();
         final String matchString = chars; //.toCharArray(); //"+;:\r\n\t\f&()!\\#$%&()*+:;<=>?@\\[\\]^_{|}~ ";
         for (int i = 0; i < matchString.length(); i++)
@@ -21,12 +21,12 @@ public class FindingEngineScalar {
 
 
     public IntArrayList tokenize_bitset(byte[] text) {
-    	
+
         var res = new IntArrayList(text.length / 7);
         var charseq = Charset.defaultCharset().decode(ByteBuffer.wrap(text));
         for (int i = 0; i < charseq.length(); i++) {
             int ch = charseq.get(i);
-            if(whitespaceBitset.get(ch)){
+            if (whitespaceBitset.get(ch)) {
                 res.add(i);
             }
         }

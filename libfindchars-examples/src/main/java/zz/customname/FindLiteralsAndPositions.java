@@ -11,30 +11,34 @@ import org.knownhosts.libfindchars.api.MatchStorage;
 
 class FindLiteralsAndPositions {
 
-	public static void main(String[] args) throws Exception {
-		
-		var findCharsEngine = new FindCharsEngine();
-		var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
-		
-		try(Arena arena = Arena.openConfined();
-			var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)){			
-			var mappedFile = channel.map(MapMode.READ_ONLY, 0, channel.size(), arena.scope());
-			var matchStorage = new MatchStorage((int)channel.size() / 7 << 1, 32);
+    public static void main(String[] args) throws Exception {
 
-			var match = findCharsEngine.find(mappedFile, matchStorage);
+        var findCharsEngine = new FindCharsEngine();
+        var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
 
-			for(int i = 0; i < match.size();i++) {
+        try (Arena arena = Arena.ofConfined();
+             var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)) {
+            var mappedFile = channel.map(MapMode.READ_ONLY, 0, channel.size(), arena);
+            var matchStorage = new MatchStorage((int) channel.size() / 7 << 1, 32);
 
-				switch(match.getLiteralAt(matchStorage, i)) {
-					case FindCharsLiterals.STAR -> System.out.println("* at: "+ match.getPositionAt(matchStorage, i));
-					case FindCharsLiterals.WHITESPACES -> System.out.println("\\w at: "+ match.getPositionAt(matchStorage, i));
-					case FindCharsLiterals.PUNCTIATIONS -> System.out.println("punctuations at: "+ match.getPositionAt(matchStorage, i));
-					case FindCharsLiterals.PLUS -> System.out.println("+ at: "+ match.getPositionAt(matchStorage, i));
-					case FindCharsLiterals.NUMS -> System.out.println("numbers at: "+ match.getPositionAt(matchStorage, i));
-					case FindCharsLiterals.COMPARISON -> System.out.println("<>= at: "+ match.getPositionAt(matchStorage, i));
-				}
-			}
-		}
-	}
+            var match = findCharsEngine.find(mappedFile, matchStorage);
+
+            for (int i = 0; i < match.size(); i++) {
+
+                switch (match.getLiteralAt(matchStorage, i)) {
+                    case FindCharsLiterals.STAR -> System.out.println("* at: " + match.getPositionAt(matchStorage, i));
+                    case FindCharsLiterals.WHITESPACES ->
+                            System.out.println("\\w at: " + match.getPositionAt(matchStorage, i));
+                    case FindCharsLiterals.PUNCTIATIONS ->
+                            System.out.println("punctuations at: " + match.getPositionAt(matchStorage, i));
+                    case FindCharsLiterals.PLUS -> System.out.println("+ at: " + match.getPositionAt(matchStorage, i));
+                    case FindCharsLiterals.NUMS ->
+                            System.out.println("numbers at: " + match.getPositionAt(matchStorage, i));
+                    case FindCharsLiterals.COMPARISON ->
+                            System.out.println("<>= at: " + match.getPositionAt(matchStorage, i));
+                }
+            }
+        }
+    }
 
 }

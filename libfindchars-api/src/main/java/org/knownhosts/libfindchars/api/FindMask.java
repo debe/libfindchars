@@ -4,13 +4,13 @@ import java.util.Map;
 
 public interface FindMask {
 
-	public byte getLiteral(String literal);
-		
-	public Map<String,Byte> literals();
-		
-	public byte[] lowNibbleMask();
-	
-	public byte[] highNibbleMask();
-	
-	
+    byte getLiteral(String literal);
+
+    Map<String, Byte> literals();
+
+    byte[] lowNibbleMask();
+
+    byte[] highNibbleMask();
+
+
 }

@@ -1,4 +1,4 @@
-		var isGreater_${count} = inputVec.compare(VectorOperators.GE, lowerBound_${count});
-		var isInRange_${count} = isGreater_${count}.and(inputVec.compare(VectorOperators.LE, upperBound_${count}));
-		accumulator = accumulator.add(literal_${count}, isInRange_${count});
-		
+        var isGreater_${count} = inputVec.compare(VectorOperators.GE, lowerBound_${count});
+        var isInRange_${count} = isGreater_${count}.and(inputVec.compare(VectorOperators.LE, upperBound_${count}));
+        accumulator = accumulator.add(literal_${count}, isInRange_${count});
+        
