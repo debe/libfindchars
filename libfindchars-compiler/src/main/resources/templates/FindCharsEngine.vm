@@ -15,69 +15,69 @@ import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.IntVector;
 
 
-public class ${engineClassName} {	
+public class ${engineClassName} {
 
-	private static int INT_BATCH_SIZE = VectorShape.preferredShape().vectorBitSize() / Integer.SIZE;	
-	private byte[] literalCacheSparse = new byte[IntVector.SPECIES_PREFERRED.vectorByteSize()];
-	private int[] positionCache = new int[INT_BATCH_SIZE];
+    private static int INT_BATCH_SIZE = VectorShape.preferredShape().vectorBitSize() / Integer.SIZE;
+    private byte[] literalCacheSparse = new byte[IntVector.SPECIES_PREFERRED.vectorByteSize()];
+    private int[] positionCache = new int[INT_BATCH_SIZE];
 
 
-	#foreach( $op in $ops )
-		#set( $count = $foreach.count )
-		#parse($op.getFieldsTpl())
-	#end 
-		    
+    #foreach( $op in $ops )
+        #set( $count = $foreach.count )
+        #parse($op.getFieldsTpl())
+    #end 
+            
     public ${engineClassName}() {
-    	initialize();
+        initialize();
     }
     
     void initialize() {
-    	#foreach( $op in $ops )
-			#set( $count = $foreach.count )
-    		#parse($op.getInitTpl())
-		#end 
+        #foreach( $op in $ops )
+            #set( $count = $foreach.count )
+            #parse($op.getInitTpl())
+        #end 
     }
 
     public MatchView find(MemorySegment mappedFile, MatchStorage matchStorage) {
-    	var vectorByteSize = ByteVector.SPECIES_PREFERRED.vectorByteSize();
+        var vectorByteSize = ByteVector.SPECIES_PREFERRED.vectorByteSize();
         var fileOffset = 0;
         var globalCount = 0;
         
         for (int i = 0; i < ((int)mappedFile.byteSize() - vectorByteSize);
-        		i = i + vectorByteSize) {
-        	var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
-        	matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
-        	
+                i = i + vectorByteSize) {
+            var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+            matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+            
             var inputVec = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, mappedFile, i, ByteOrder.nativeOrder()); 
 
-    	#foreach( $op in $ops )
-			#set( $count = $foreach.count )	
-    		#parse($op.getInlineTpl())
-    		
-		#end 
+        #foreach( $op in $ops )
+            #set( $count = $foreach.count )
+            #parse($op.getInlineTpl())
+            
+        #end 
 
 #parse("templates/MatchDecoder.vm")
-        	
-        	globalCount += count;
+            
+            globalCount += count;
             fileOffset += vectorByteSize;
         }
         
         // last chunk
-    	var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+        var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
         byte[] lastChunkPadded = new byte[vectorByteSize];
         MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset,lastChunkPadded,0,(int)mappedFile.byteSize() - fileOffset);
         matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
         var inputVec = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, lastChunkPadded, 0); 
 
-    	#foreach( $op in $ops )
-			#set( $count = $foreach.count )	
-    		#parse($op.getInlineTpl())
-    		
-		#end 
+        #foreach( $op in $ops )
+            #set( $count = $foreach.count )
+            #parse($op.getInlineTpl())
+            
+        #end 
 #parse("templates/MatchDecoder.vm")
-    	globalCount+=count;
-		
-    	return new MatchView(globalCount);
+        globalCount+=count;
+        
+        return new MatchView(globalCount);
 
     }
 

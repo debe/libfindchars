@@ -1,13 +1,13 @@
-	#foreach( $findMask in ${op.FindMasks} )
-		#set($i = ${foreach.count} - 1)
-		var vShuffleLow_${count}_${foreach.count} = lowNibbleMasks_${count}[${i}].rearrange(inputVec.and(lowByteVec_${count}).toShuffle());
-		var vHighShiftedData_${count}_${foreach.count} = inputVec.lanewise(VectorOperators.LSHR,4).and(highByteVec_${count});
-		var vShuffleHigh_${count}_${foreach.count} = highNibbleMasks_${count}[${i}].rearrange(vHighShiftedData_${count}_${foreach.count}.toShuffle());
-		var buf_${count}_${i} = vShuffleLow_${count}_${foreach.count}.and(vShuffleHigh_${count}_${foreach.count});
-	
-		#foreach( $literal in ${findMask.literals().values()} )
-		#set($j = ${foreach.count} - 1)		
-		accumulator = accumulator.add(buf_${count}_${i}, buf_${count}_${i}.lanewise(VectorOperators.XOR, literalMasks_${count}_${i}[${j}]).compare(VectorOperators.EQ, 0));
-		#end
-		
-	#end
+    #foreach( $findMask in ${op.FindMasks} )
+        #set($i = ${foreach.count} - 1)
+        var vShuffleLow_${count}_${foreach.count} = lowNibbleMasks_${count}[${i}].rearrange(inputVec.and(lowByteVec_${count}).toShuffle());
+        var vHighShiftedData_${count}_${foreach.count} = inputVec.lanewise(VectorOperators.LSHR,4).and(highByteVec_${count});
+        var vShuffleHigh_${count}_${foreach.count} = highNibbleMasks_${count}[${i}].rearrange(vHighShiftedData_${count}_${foreach.count}.toShuffle());
+        var buf_${count}_${i} = vShuffleLow_${count}_${foreach.count}.and(vShuffleHigh_${count}_${foreach.count});
+    
+        #foreach( $literal in ${findMask.literals().values()} )
+        #set($j = ${foreach.count} - 1)
+        accumulator = accumulator.add(buf_${count}_${i}, buf_${count}_${i}.lanewise(VectorOperators.XOR, literalMasks_${count}_${i}[${j}]).compare(VectorOperators.EQ, 0));
+        #end
+        
+    #end

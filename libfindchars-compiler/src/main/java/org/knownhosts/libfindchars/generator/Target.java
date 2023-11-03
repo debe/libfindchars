@@ -1,27 +1,27 @@
 package org.knownhosts.libfindchars.generator;
 
 public class Target {
-	
-	private String packageName;
-	private String directory;
 
-	public Target withPackageName(String packageName){
-		this.packageName = packageName;
-		return this;
-	}
+    private String packageName;
+    private String directory;
 
-	public Target withDirectory(String directory){
-		this.directory = directory;
-		return this;
-	}
+    public Target withPackageName(String packageName) {
+        this.packageName = packageName;
+        return this;
+    }
 
-	public String getPackageName() {
-		return packageName;
-	}
+    public Target withDirectory(String directory) {
+        this.directory = directory;
+        return this;
+    }
 
-	public String getDirectory() {
-		return directory;
-	}
-	
-	
+    public String getPackageName() {
+        return packageName;
+    }
+
+    public String getDirectory() {
+        return directory;
+    }
+
+
 }

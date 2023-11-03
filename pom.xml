@@ -53,12 +53,12 @@
 	                    <meminitial>256m</meminitial>
 	                    <encoding>UTF-8</encoding>
 	
-	                    <release>20</release>
+	                    <release>21</release>
 	
 	
 	                    <!-- IntelliJ needs these https://youtrack.jetbrains.com/issue/IDEA-195472 -->
-	                    <source>20</source>
-	                    <target>20</target>
+	                    <source>21</source>
+	                    <target>21</target>
 	
 	                    <debug>true</debug>
 	                    <debuglevel>lines,vars,source</debuglevel>
@@ -100,5 +100,6 @@
 		<module>libfindchars-api</module>
 		<module>libfindchars-compiler</module>
 		<module>libfindchars-examples</module>
+		<module>libfindchars-bench</module>
 	</modules>
 </project>
