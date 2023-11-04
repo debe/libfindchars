@@ -41,7 +41,7 @@ public class BenchController {
             var channel = FileChannel.open(Path.of(testDataURI), StandardOpenOption.READ)) {
             var index = random.nextInt(128);
             var mappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
-            var matchStorage = new MatchStorage((int) channel.size() / 7 << 1, 32);
+            var matchStorage = new MatchStorage((int) (channel.size() / 4), 32);
             var start = Instant.now();
             var match = findCharsEngine.find(mappedFile, matchStorage);
             System.out.println("Size is: "+match.size());
