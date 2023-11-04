@@ -93,7 +93,7 @@ using a single core.
 
 1. A compiled regex Pattern to find tokens and have the knowledge which token it was.
    ![regex](./doc/regex.png)
-2. A bitset to find tokens without the knowledge which token matched. Only useful for token groups e.g. all whitespaces.
+2. A bitset to find tokens without the knowledge which token matched. Only useful for one token group e.g. all whitespaces.
    ![regex](./doc/bitset.png)
 3. libfindchars using a generated engine.
    ![regex](./doc/libfindchars.png)
