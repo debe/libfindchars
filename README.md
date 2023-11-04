@@ -10,7 +10,10 @@ on a single core for a text file containing 20% tokens.
 
 Here are some tricks it uses:
  * vector shuffle mask operation which acts as lookup table hack. 
-   To do this the compiler builds and solves a linear equation system containing hundreds of bitwise operations in equations and inequations to actually find a working vector configuration (only two vectors needed most of the time). 
+   To do this the compiler builds and solves an equation system containing hundreds of bitwise operations 
+   in equations and inequations to actually find a working vector configuration (only two vectors needed most of the time).
+   This is done by using the theorem prover [z3](https://github.com/Z3Prover/z3) as normal SAT solving systems 
+   are simply not clever enough to find a solution.
  * vector range operation to find character ranges quickly.
  * Bit hacks to calculate the positions quickly.
  * Auto growing native arrays and memory segments.

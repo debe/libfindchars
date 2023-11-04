@@ -87,7 +87,6 @@ public class LiteralCompiler implements AutoCloseable {
 
 
         // literal vectors
-
         List<BitvectorFormula> literalVectors = Lists.newArrayList();
 
         // init vectors
@@ -98,7 +97,6 @@ public class LiteralCompiler implements AutoCloseable {
         for (int i = 0; i < highNibbles.length; i++) {
             highNibbles[i] = bitvectorManager.makeVariable(8, "h_" + i);
         }
-
 
         for (Literal literal : literalGroup.getLiterals()) {
             var literalVector = bitvectorManager.makeVariable(8, literal.getName());
@@ -138,14 +136,12 @@ public class LiteralCompiler implements AutoCloseable {
             }
         }
 
-
         for (BitvectorFormula bitvectorFormula : literalVectors) {
             exclusions.add(bitvectorManager.greaterThan(bitvectorFormula, zeroVector, true));
             for (BitvectorFormula usedLiteral : usedLiteralsVectors) {
                 exclusions.add(booleanManager.not(bitvectorManager.equal(bitvectorFormula, usedLiteral)));
             }
         }
-
 
         // solve
 
