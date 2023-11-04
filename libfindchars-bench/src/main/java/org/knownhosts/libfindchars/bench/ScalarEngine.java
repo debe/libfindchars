@@ -26,7 +26,7 @@ public class ScalarEngine {
 
     public IntArrayList bitset(ByteBuffer byteBuffer) {
     	
-        var res = new IntArrayList(byteBuffer.capacity() / 7);
+        var res = new IntArrayList(byteBuffer.capacity() / 4);
         var charseq = Charset.defaultCharset().decode(byteBuffer);
         for (int i = 0; i < charseq.length(); i++) {
             int ch = charseq.get(i);
@@ -38,7 +38,7 @@ public class ScalarEngine {
     }
 
     public IntArrayList regex(ByteBuffer byteBuffer) {
-        var res = new IntArrayList(byteBuffer.capacity() / 7);
+        var res = new IntArrayList(byteBuffer.capacity() / 4);
         var charseq = Charset.defaultCharset().decode(byteBuffer);
         var matcher = pattern.matcher(charseq);
         matcher.matches();
