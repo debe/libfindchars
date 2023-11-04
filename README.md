@@ -5,6 +5,9 @@ libfindchars is a character detection library that can find any ASCII character 
 Use cases are tokenizers, parsers or various pre-processing steps involving fast character detection.
 As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
 
+See the [Benchmark](#benchmark) how fast it is. It typically reaches around **1 GiB/s** throughput 
+on a single core for a text file containing 20% tokens.
+
 Here are some tricks it uses:
  * vector shuffle mask operation which acts as lookup table hack. 
    To do this the compiler builds and solves a linear equation system containing hundreds of bitwise operations in equations and inequations to actually find a working vector configuration (only two vectors needed most of the time). 
@@ -74,3 +77,22 @@ public static void main(String[] args) throws Exception {
 }
 ```
 
+Benchmark
+---------
+
+The following benchmark was done by parsing a 3 MB clear text file and finding 13 different tokens 
+with a token density is approx 20% in this file. Three tests where conducted using a combination of
+the actual finding algorithm implemented in java and the measurement and evaluation code using 
+the great [criterion.rs](https://github.com/bheisler/criterion.rs) benchmarking kit for rust.
+
+Libfindchars beat them all by an order of magnitude to reach an average of **1 GiB/s** throughput
+using a single core.
+
+1. A compiled regex Pattern to find tokens and have the knowledge which token it was.
+   ![regex](./doc/regex.png)
+2. A bitset to find tokens without the knowledge which token matched. Only useful for token groups e.g. all whitespaces.
+   ![regex](./doc/bitset.png)
+3. libfindchars using a generated engine.
+   ![regex](./doc/libfindchars.png)
+
+   
