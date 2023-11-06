@@ -19,8 +19,7 @@ class FindLiteralsAndPositions {
         try (Arena arena = Arena.ofConfined();
              var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)) {
             var mappedFile = channel.map(MapMode.READ_ONLY, 0, channel.size(), arena);
-            var matchStorage = new MatchStorage((int) channel.size() / 7 << 1, 32);
-
+            var matchStorage = new MatchStorage((int) channel.size() / 4, 32);
             var match = findCharsEngine.find(mappedFile, matchStorage);
 
             for (int i = 0; i < match.size(); i++) {
