@@ -1,6 +1,5 @@
 package org.knownhosts.libfindchars.generator;
 
-import org.apache.velocity.Template;
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.VelocityEngine;
 import org.knownhosts.libfindchars.api.FindMask;
@@ -27,7 +26,7 @@ public class EngineBuilder {
 
     private static final String engineClassName = "FindCharsEngine";
     private static final String literalsClassName = "FindCharsLiterals";
-
+    
     public static void build(EngineConfiguration config) {
 
         // validate config
@@ -51,9 +50,11 @@ public class EngineBuilder {
         p.setProperty("resource.loader", "class");
         p.setProperty("class.resource.loader.class", "org.apache.velocity.runtime.resource.loader.ClasspathResourceLoader");
         velocityEngine.init(p);
-        Template findEngineTemplate = velocityEngine.getTemplate("templates/FindCharsEngine.vm");
-        Template literalsTemplate = velocityEngine.getTemplate("templates/FindCharsLiterals.vm");
-
+        
+        var javaTemplates = Map.of(
+        		engineClassName, velocityEngine.getTemplate("templates/FindCharsEngine.vm"),
+        		literalsClassName, velocityEngine.getTemplate("templates/FindCharsLiterals.vm"));
+        
         VelocityContext context = new VelocityContext();
 
         context.put("packagename", target.getPackageName());
@@ -98,36 +99,21 @@ public class EngineBuilder {
         context.put("literals", literalConstants);
         context.put("ops", ops);
 
-        String filename = Paths.get(target.getDirectory() + File.separator + String.join(File.separator, target.getPackageName().split("\\.")), engineClassName + ".java").toString();
-        logger.info("generating Engine at: {}", filename);
-        File file = new File(filename);
+        for(var template : javaTemplates.entrySet()) {
+        	String filename = Paths.get(target.getDirectory() + File.separator + String.join(File.separator, target.getPackageName().split("\\.")), template.getKey() + ".java").toString();
+            logger.info("generating Engine at: {}", filename);
+            File file = new File(filename);
 
-        try (FileWriter writer = new FileWriter(file)) {
-            file.mkdirs();
-//	        file.delete();
-            file.createNewFile();
-            findEngineTemplate.merge(context, writer);
-            writer.flush();
-        } catch (IOException e) {
-            logger.error("error in filehandling", e);
-            System.exit(-1);
+            try (FileWriter writer = new FileWriter(file)) {
+                file.mkdirs();
+                file.createNewFile();
+                template.getValue().merge(context, writer);
+                writer.flush();
+            } catch (IOException e) {
+                logger.error("error in filehandling", e);
+                System.exit(-1);
+            }
         }
-
-        filename = Paths.get(target.getDirectory() + File.separator + String.join(File.separator, target.getPackageName().split("\\.")), literalsClassName + ".java").toString();
-        logger.info("generating Literals at: {}", filename);
-        file = new File(filename);
-
-        try (FileWriter writer = new FileWriter(file)) {
-            file.mkdirs();
-//	        file.delete();
-            file.createNewFile();
-            literalsTemplate.merge(context, writer);
-            writer.flush();
-        } catch (IOException e) {
-            logger.error("error in filehandling", e);
-            System.exit(-1);
-        }
-
     }
 
     private static void exitIf(boolean condition, String message) {
