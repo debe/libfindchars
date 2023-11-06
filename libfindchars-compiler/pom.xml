@@ -48,7 +48,7 @@
 	<dependency>
 	    <groupId>org.sosy-lab</groupId>
 	    <artifactId>javasmt-solver-z3</artifactId>
-	    <version>4.12.2</version>
+	    <version>4.12.2-glibc_2.27</version>
 	    <type>jar</type>
         <classifier>com.microsoft.z3</classifier>
 	</dependency>
