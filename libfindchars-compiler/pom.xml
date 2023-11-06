@@ -23,7 +23,7 @@
 	<dependency> 
 	  <groupId>ch.qos.logback</groupId>
 	  <artifactId>logback-classic</artifactId>
-	  <version>1.4.7</version>
+	  <version>1.4.11</version>
 	</dependency>
 	<!-- https://mvnrepository.com/artifact/org.apache.velocity/velocity-engine-core -->
 	<dependency>
