@@ -5,7 +5,6 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
-import org.knownhosts.libfindchars.api.MatchDecoder;
 import org.knownhosts.libfindchars.api.MatchStorage;
 import org.knownhosts.libfindchars.api.MatchView;
 
@@ -17,22 +16,22 @@ import jdk.incubator.vector.IntVector;
 
 public class FindCharsEngine {
 
-    private static final int INT_BATCH_SIZE = VectorShape.preferredShape().vectorBitSize() / Integer.SIZE;
-    private final byte[] literalCacheSparse = new byte[IntVector.SPECIES_PREFERRED.vectorByteSize()];
-    private final int[] positionCache = new int[INT_BATCH_SIZE];
+    private static int INT_BATCH_SIZE = VectorShape.preferredShape().vectorBitSize() / Integer.SIZE;
+    private byte[] literalCacheSparse = new byte[IntVector.SPECIES_PREFERRED.vectorByteSize()];
+    private int[] positionCache = new int[INT_BATCH_SIZE];
 
 
-private ByteVector lowByteVec_1;
-private ByteVector highByteVec_1;
+    private ByteVector lowByteVec_1;
+    private ByteVector highByteVec_1;
 
-private ByteVector[] lowNibbleMasks_1;
-private ByteVector[] highNibbleMasks_1;
+    private ByteVector[] lowNibbleMasks_1;
+    private ByteVector[] highNibbleMasks_1;
 
-private ByteVector[] literalMasks_1_0;
-private ByteVector[] literalMasks_1_1;
-private ByteVector lowerBound_2;
-private ByteVector upperBound_2;
-private ByteVector literal_2;
+    private ByteVector[] literalMasks_1_0;
+    private ByteVector[] literalMasks_1_1;
+    private ByteVector lowerBound_2;
+    private ByteVector upperBound_2;
+    private ByteVector literal_2;
             
     public FindCharsEngine() {
         initialize();
@@ -74,7 +73,7 @@ private ByteVector literal_2;
     
         this.lowerBound_2 = ByteVector.SPECIES_PREFERRED.broadcast(60).reinterpretAsBytes();
         this.upperBound_2 = ByteVector.SPECIES_PREFERRED.broadcast(62).reinterpretAsBytes();
-        this.literal_2 = ByteVector.SPECIES_PREFERRED.broadcast(-70).reinterpretAsBytes();
+        this.literal_2 = ByteVector.SPECIES_PREFERRED.broadcast(-119).reinterpretAsBytes();
     }
 
     public MatchView find(MemorySegment mappedFile, MatchStorage matchStorage) {
@@ -84,7 +83,7 @@ private ByteVector literal_2;
         
         for (int i = 0; i < ((int)mappedFile.byteSize() - vectorByteSize);
                 i = i + vectorByteSize) {
-            var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+            var accumulator = ByteVector.SPECIES_PREFERRED.zero();
             matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
             
             var inputVec = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, mappedFile, i, ByteOrder.nativeOrder()); 
@@ -106,11 +105,11 @@ private ByteVector literal_2;
     
         accumulator = accumulator.add(buf_1_1, buf_1_1.lanewise(VectorOperators.XOR, literalMasks_1_1[0]).compare(VectorOperators.EQ, 0));
         
-            
+	            
         var isGreater_2 = inputVec.compare(VectorOperators.GE, lowerBound_2);
         var isInRange_2 = isGreater_2.and(inputVec.compare(VectorOperators.LE, upperBound_2));
         accumulator = accumulator.add(literal_2, isInRange_2);
-                    
+        	            
 
             accumulator.reinterpretAsBytes().intoArray(literalCacheSparse, 0);
             var findMask = accumulator.compare(VectorOperators.NE, 0);
@@ -141,7 +140,7 @@ private ByteVector literal_2;
         }
         
         // last chunk
-        var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+        var accumulator = ByteVector.SPECIES_PREFERRED.zero();
         byte[] lastChunkPadded = new byte[vectorByteSize];
         MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset,lastChunkPadded,0,(int)mappedFile.byteSize() - fileOffset);
         matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);

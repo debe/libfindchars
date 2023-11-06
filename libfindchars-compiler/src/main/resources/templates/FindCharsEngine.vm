@@ -5,7 +5,6 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
-import org.knownhosts.libfindchars.api.MatchDecoder;
 import org.knownhosts.libfindchars.api.MatchStorage;
 import org.knownhosts.libfindchars.api.MatchView;
 
@@ -45,16 +44,16 @@ public class ${engineClassName} {
         
         for (int i = 0; i < ((int)mappedFile.byteSize() - vectorByteSize);
                 i = i + vectorByteSize) {
-            var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+            var accumulator = ByteVector.SPECIES_PREFERRED.zero();
             matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
             
             var inputVec = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, mappedFile, i, ByteOrder.nativeOrder()); 
 
-        #foreach( $op in $ops )
-            #set( $count = $foreach.count )
-            #parse($op.getInlineTpl())
-            
-        #end 
+	        #foreach( $op in $ops )
+	            #set( $count = $foreach.count )
+	            #parse($op.getInlineTpl())
+	            
+	        #end 
 
 #parse("templates/MatchDecoder.vm")
             
@@ -63,7 +62,7 @@ public class ${engineClassName} {
         }
         
         // last chunk
-        var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
+        var accumulator = ByteVector.SPECIES_PREFERRED.zero();
         byte[] lastChunkPadded = new byte[vectorByteSize];
         MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset,lastChunkPadded,0,(int)mappedFile.byteSize() - fileOffset);
         matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
