@@ -44,8 +44,9 @@ public class BenchController {
             var matchStorage = new MatchStorage((int) (channel.size() / 4), 32);
             var start = Instant.now();
             var match = findCharsEngine.find(mappedFile, matchStorage);
-            System.out.println("Size is: "+match.size());
             var stop = Instant.now();
+            System.out.println("Size is: "+match.size());
+
                 switch(match.getLiteralAt(matchStorage, index)) {
                     case FindCharsLiterals.STAR -> System.out.println("* at: "+ match.getPositionAt(matchStorage, index));
                     case FindCharsLiterals.WHITESPACES -> System.out.println("\\w at: "+ match.getPositionAt(matchStorage, index));
