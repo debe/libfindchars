@@ -91,9 +91,19 @@ the great [criterion.rs](https://github.com/bheisler/criterion.rs) benchmarking 
 Libfindchars beat them all by an order of magnitude to reach an average of **1 GiB/s** throughput
 using a single core.
 
-1. libfindchars using a generated engine.
-   [![libfindchars](./doc/libfindchars.png)](#)
-2. A compiled regex Pattern to find tokens and have the knowledge which token it was.
-   [![regex](./doc/regex.png)](#)
-3. A bitset to find tokens without the knowledge which token matched. Only useful for one token group e.g. all whitespaces.
-   [![bitset](./doc/bitset.png)])(#)
+1. libfindchars using a generated engine:
+   <picture>
+     <img alt="libfindchars" src="./doc/libfindchars.png">
+   </picture>
+2. A compiled regex Pattern to find tokens and have the knowledge which token it was:
+   <picture>
+   <img alt="regex" src="./doc/regex.png">
+   </picture>
+3. A bitset to find tokens without the knowledge which token matched. Only useful for one token group e.g. all whitespaces:
+   <picture>
+   <img alt="bitset" src="./doc/bitset.png">
+   </picture>
+4. In addition, see violin plot of all together:
+   <picture>
+   <img alt="violin" src="./doc/violin.png">
+   </picture>
