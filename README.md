@@ -92,8 +92,8 @@ Libfindchars beat them all by an order of magnitude to reach an average of **1 G
 using a single core.
 
 1. libfindchars using a generated engine.
-   ![regex](./doc/libfindchars.png)
+   [![libfindchars](./doc/libfindchars.png)](#)
 2. A compiled regex Pattern to find tokens and have the knowledge which token it was.
-   ![regex](./doc/regex.png)
+   [![regex](./doc/regex.png)](#)
 3. A bitset to find tokens without the knowledge which token matched. Only useful for one token group e.g. all whitespaces.
-   ![regex](./doc/bitset.png)
+   [![bitset](./doc/bitset.png)])(#)
