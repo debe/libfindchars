@@ -42,7 +42,7 @@
   	<dependency>
   		<groupId>org.sosy-lab</groupId>
   		<artifactId>java-smt</artifactId>
-  		<version>4.0.3</version>
+  		<version>4.1.0</version>
   	</dependency>
 	<!-- https://mvnrepository.com/artifact/org.sosy-lab/javasmt-solver-z3 -->
 	<dependency>
