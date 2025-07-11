@@ -53,12 +53,12 @@
 	                    <meminitial>256m</meminitial>
 	                    <encoding>UTF-8</encoding>
 	
-	                    <release>21</release>
+	                    <release>24</release>
 	
 	
 	                    <!-- IntelliJ needs these https://youtrack.jetbrains.com/issue/IDEA-195472 -->
-	                    <source>21</source>
-	                    <target>21</target>
+	                    <source>24</source>
+	                    <target>24</target>
 	
 	                    <debug>true</debug>
 	                    <debuglevel>lines,vars,source</debuglevel>
