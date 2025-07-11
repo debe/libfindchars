@@ -53,15 +53,4 @@
         <classifier>com.microsoft.z3</classifier>
 	</dependency>
   </dependencies>
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <argLine>--enable-preview --add-modules=jdk.incubator.vector --add-modules=ALL-SYSTEM -Djava.library.path=/tmp/z3_libs</argLine>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>
