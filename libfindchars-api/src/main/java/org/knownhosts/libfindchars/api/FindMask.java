@@ -4,7 +4,7 @@ import java.util.Map;
 
 public interface FindMask {
 
-    byte getLiteral(String literal);
+    byte literalOf(String literal);
 
     Map<String, Byte> literals();
 

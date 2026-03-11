@@ -5,7 +5,7 @@ import java.util.Arrays;
 import com.carrotsearch.hppc.ArraySizingStrategy;
 import com.carrotsearch.hppc.BoundedProportionalArraySizingStrategy;
 
-public class MatchStorage implements Growable {
+public final class MatchStorage {
 
     private int[] positions;
 
@@ -23,8 +23,7 @@ public class MatchStorage implements Growable {
         this.reserve = reserve;
     }
 
-    @Override
-    public int ensureSize(int expectedElements, int elementSize, int offset) {
+    public int ensureSize(int expectedElements, int offset) {
         final int maxSize = Math.min(literals.length, positions.length);
         final int additions = expectedElements + reserve; // plus reservation
 
@@ -34,9 +33,7 @@ public class MatchStorage implements Growable {
         return maxSize;
     }
 
-
-    @Override
-    public int grow(int maxSize, int offset, int additions) {
+    private int grow(int maxSize, int offset, int additions) {
         final int newSize = resizer.grow(maxSize, offset, additions);
         this.positions = Arrays.copyOf(positions, newSize);
         this.literals = Arrays.copyOf(literals, newSize);

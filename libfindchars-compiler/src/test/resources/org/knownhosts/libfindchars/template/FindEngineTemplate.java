@@ -35,7 +35,7 @@ public class FindEngineTemplate extends ExtensionTemplate {
         for (int i = 0; i < ((int) mappedFile.byteSize() - vectorByteSize);
              i = i + vectorByteSize) {
             var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
-            tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+            tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), globalCount);
 
             var inputVec = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, mappedFile, i, ByteOrder.nativeOrder());
 
@@ -54,7 +54,7 @@ public class FindEngineTemplate extends ExtensionTemplate {
         var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
         byte[] lastChunkPadded = new byte[vectorByteSize];
         MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset, lastChunkPadded, 0, (int) mappedFile.byteSize() - fileOffset);
-        tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+        tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), globalCount);
         var inputVec = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, lastChunkPadded, 0);
 
 

@@ -78,7 +78,7 @@ public class FindCharsEngine {
         for (int i = 0; i < ((int)mappedFile.byteSize() - vectorByteSize);
                 i = i + vectorByteSize) {
             var accumulator = ByteVector.SPECIES_PREFERRED.zero();
-            matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+            matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), globalCount);
 
             var inputVec = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, mappedFile, i, ByteOrder.nativeOrder());
 
@@ -134,7 +134,7 @@ public class FindCharsEngine {
         var accumulator = ByteVector.SPECIES_PREFERRED.zero();
         byte[] lastChunkPadded = new byte[vectorByteSize];
         MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset,lastChunkPadded,0,(int)mappedFile.byteSize() - fileOffset);
-        matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+        matchStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), globalCount);
         var inputVec = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, lastChunkPadded, 0);
 
         var vShuffleLow_1_1 = lowNibbleMasks_1[0].rearrange(inputVec.and(lowByteVec_1).toShuffle());

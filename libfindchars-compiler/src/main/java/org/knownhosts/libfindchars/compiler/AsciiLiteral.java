@@ -10,14 +10,4 @@ public record AsciiLiteral(String name, char... chars) implements Literal {
         }
     }
 
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public char[] getChars() {
-        return chars;
-    }
-
 }

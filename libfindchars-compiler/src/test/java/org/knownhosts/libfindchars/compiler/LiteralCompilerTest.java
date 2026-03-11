@@ -98,11 +98,11 @@ class LiteralCompilerTest {
 
 
     private void assertLiteralGroup(LiteralGroup literalGroup, List<FindMask> masks, int i) {
-        for (Literal literal : literalGroup.getLiterals()) {
-            for (char c : literal.getChars()) {
+        for (Literal literal : literalGroup.literals()) {
+            for (char c : literal.chars()) {
                 var nibbles = LiteralCompiler.toNibbles(c);
                 byte andResult = (byte) (masks.get(i).lowNibbleMask()[nibbles[0]] & masks.get(i).highNibbleMask()[nibbles[1]]);
-                Assertions.assertEquals(masks.get(i).getLiteral(literal.getName()), andResult);
+                Assertions.assertEquals(masks.get(i).literalOf(literal.name()), andResult);
             }
         }
     }

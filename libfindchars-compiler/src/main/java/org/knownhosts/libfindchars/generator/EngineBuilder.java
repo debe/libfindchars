@@ -24,6 +24,7 @@ public class EngineBuilder {
     public record BuildResult(FindCharsEngine engine, Map<String, Byte> literals) {}
 
     public static BuildResult build(EngineConfiguration config) {
+        var species = config.species();
         List<RangeOperation> rangeOperations = config.rangeOperations();
         ShuffleOperation shuffleOperation = config.shuffleOperation();
 
@@ -33,7 +34,7 @@ public class EngineBuilder {
         if (shuffleOperation != null) {
             try (LiteralCompiler literalCompiler = new LiteralCompiler()) {
                 var masks = literalCompiler.solve(shuffleOperation.literalGroups().toArray(new LiteralGroup[]{}));
-                ops.add(new ShuffleMaskOp(masks));
+                ops.add(new ShuffleMaskOp(species, masks));
                 for (FindMask findMask : masks) {
                     literalMap.putAll(findMask.literals());
                 }
@@ -48,14 +49,14 @@ public class EngineBuilder {
             while (literalMap.containsValue((byte) pick) && literalMap.size() < 255) {
                 pick = ThreadLocalRandom.current().nextInt(1, 256);
             }
-            ops.add(new RangeOp(operation.from(), operation.to(), (byte) pick));
+            ops.add(new RangeOp(species, operation.from(), operation.to(), (byte) pick));
             literalMap.put(operation.name(), (byte) pick);
         }
 
         logger.info("built engine with {} ops and {} literals", ops.size(), literalMap.size());
 
         return new BuildResult(
-                new FindCharsEngine(ops.toArray(new FindOp[0])),
+                new FindCharsEngine(species, ops.toArray(new FindOp[0])),
                 literalMap);
     }
 }

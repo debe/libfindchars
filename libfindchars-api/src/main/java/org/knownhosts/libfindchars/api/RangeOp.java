@@ -2,6 +2,7 @@ package org.knownhosts.libfindchars.api;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 public final class RangeOp implements FindOp {
 
@@ -9,10 +10,14 @@ public final class RangeOp implements FindOp {
     private final ByteVector upperBound;
     private final ByteVector literal;
 
+    public RangeOp(VectorSpecies<Byte> species, byte lowerBound, byte upperBound, byte literal) {
+        this.lowerBound = species.broadcast(lowerBound).reinterpretAsBytes();
+        this.upperBound = species.broadcast(upperBound).reinterpretAsBytes();
+        this.literal = species.broadcast(literal).reinterpretAsBytes();
+    }
+
     public RangeOp(byte lowerBound, byte upperBound, byte literal) {
-        this.lowerBound = ByteVector.SPECIES_PREFERRED.broadcast(lowerBound).reinterpretAsBytes();
-        this.upperBound = ByteVector.SPECIES_PREFERRED.broadcast(upperBound).reinterpretAsBytes();
-        this.literal = ByteVector.SPECIES_PREFERRED.broadcast(literal).reinterpretAsBytes();
+        this(ByteVector.SPECIES_PREFERRED, lowerBound, upperBound, literal);
     }
 
     @Override

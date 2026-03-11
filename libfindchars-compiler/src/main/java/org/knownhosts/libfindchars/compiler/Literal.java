@@ -2,8 +2,8 @@ package org.knownhosts.libfindchars.compiler;
 
 public interface Literal {
 
-    String getName();
+    String name();
 
-    char[] getChars();
+    char[] chars();
 
 }

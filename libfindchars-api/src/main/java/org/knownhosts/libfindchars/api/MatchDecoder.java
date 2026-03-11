@@ -1,15 +1,28 @@
 package org.knownhosts.libfindchars.api;
 
+import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.Vector;
 import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorShape;
+import jdk.incubator.vector.VectorSpecies;
 
-public class MatchDecoder {
-    private static final int INT_BATCH_SIZE = VectorShape.preferredShape().vectorBitSize() / Integer.SIZE;
+public final class MatchDecoder {
+    private final VectorSpecies<Integer> intSpecies;
+    private final int intBatchSize;
 
-    private final byte[] literalCacheSparse = new byte[IntVector.SPECIES_PREFERRED.vectorByteSize()];
-    private final int[] positionCache = new int[INT_BATCH_SIZE];
+    private final byte[] literalCacheSparse;
+    private final int[] positionCache;
+
+    public MatchDecoder(VectorSpecies<Byte> byteSpecies) {
+        this.intSpecies = byteSpecies.withLanes(int.class);
+        this.intBatchSize = intSpecies.length();
+        this.literalCacheSparse = new byte[intSpecies.vectorByteSize()];
+        this.positionCache = new int[intBatchSize];
+    }
+
+    public MatchDecoder() {
+        this(ByteVector.SPECIES_PREFERRED);
+    }
 
     int decode8WithLiteral(MatchStorage tapeStorage, int bits, int offset, int arrayOffset) {
         for (int i = 0; i < positionCache.length; i++) {
@@ -17,7 +30,7 @@ public class MatchDecoder {
             tapeStorage.getLiteralBuffer()[(arrayOffset) + i] = literalCacheSparse[positionCache[i]];
             bits = bits & (bits - 1);
         }
-        var v = IntVector.fromArray(IntVector.SPECIES_PREFERRED, positionCache, 0);
+        var v = IntVector.fromArray(intSpecies, positionCache, 0);
         var added = v.add(offset);
 
         added.intoArray(tapeStorage.getPositionsBuffer(), arrayOffset);
@@ -39,9 +52,9 @@ public class MatchDecoder {
 
         var arrayOffset = segmentOffset;
 
-        for (int i = 0; i < (count); i = i + INT_BATCH_SIZE) {
+        for (int i = 0; i < (count); i = i + intBatchSize) {
             bits = decode8WithLiteral(tapeStorage, bits, fileOffset, arrayOffset);
-            arrayOffset += INT_BATCH_SIZE; // peek batch size
+            arrayOffset += intBatchSize; // peek batch size
         }
 
         return count;

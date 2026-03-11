@@ -98,12 +98,12 @@ public class LiteralCompiler implements AutoCloseable {
             highNibbles[i] = bitvectorManager.makeVariable(8, "h_" + i);
         }
 
-        for (Literal literal : literalGroup.getLiterals()) {
-            var literalVector = bitvectorManager.makeVariable(8, literal.getName());
+        for (Literal literal : literalGroup.literals()) {
+            var literalVector = bitvectorManager.makeVariable(8, literal.name());
             literalVectors.add(literalVector);
 
             // build matching constraints
-            for (char c : literal.getChars()) {
+            for (char c : literal.chars()) {
                 var nibbles = toNibbles(c);
                 var equation = bitvectorManager.equal(
                         bitvectorManager.and(lowNibbles[nibbles[0]],

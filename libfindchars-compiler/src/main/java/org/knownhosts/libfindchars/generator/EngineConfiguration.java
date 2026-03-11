@@ -4,10 +4,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public record EngineConfiguration(ShuffleOperation shuffleOperation,
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorSpecies;
+
+public record EngineConfiguration(VectorSpecies<Byte> species,
+                                  ShuffleOperation shuffleOperation,
                                   List<RangeOperation> rangeOperations) {
 
     public EngineConfiguration {
+        species = species != null ? species : ByteVector.SPECIES_PREFERRED;
         rangeOperations = rangeOperations != null ? List.copyOf(rangeOperations) : List.of();
         if (shuffleOperation == null && rangeOperations.isEmpty()) {
             throw new IllegalArgumentException("at least one operation is mandatory");
@@ -19,10 +24,16 @@ public record EngineConfiguration(ShuffleOperation shuffleOperation,
     }
 
     public static final class Builder {
+        private VectorSpecies<Byte> species;
         private ShuffleOperation shuffleOperation;
         private final List<RangeOperation> rangeOperations = new ArrayList<>();
 
         private Builder() {}
+
+        public Builder species(VectorSpecies<Byte> species) {
+            this.species = species;
+            return this;
+        }
 
         public Builder shuffleOperation(ShuffleOperation shuffleOperation) {
             this.shuffleOperation = shuffleOperation;
@@ -35,7 +46,7 @@ public record EngineConfiguration(ShuffleOperation shuffleOperation,
         }
 
         public EngineConfiguration build() {
-            return new EngineConfiguration(shuffleOperation, rangeOperations);
+            return new EngineConfiguration(species, shuffleOperation, rangeOperations);
         }
     }
 }

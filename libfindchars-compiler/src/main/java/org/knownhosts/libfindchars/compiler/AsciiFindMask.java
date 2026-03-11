@@ -9,7 +9,7 @@ public record AsciiFindMask(byte[] lowNibbleMask, byte[] highNibbleMask,
 
 
     @Override
-    public byte getLiteral(String literal) {
+    public byte literalOf(String literal) {
         return literals.get(literal);
     }
 

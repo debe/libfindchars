@@ -26,7 +26,7 @@ public class FindingEngine {
         for (int i = 0; i < ((int) mappedFile.byteSize() - vectorByteSize);
              i = i + vectorByteSize) {
             var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
-            tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+            tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), globalCount);
 
             for (int j = 0; j < findOperation.length; j++) {
                 accumulator = findOperation[j].find(mappedFile, i, accumulator);
@@ -41,7 +41,7 @@ public class FindingEngine {
         var accumulator = ByteVector.SPECIES_PREFERRED.broadcast(0L).reinterpretAsBytes();
         byte[] lastChunkPadded = new byte[vectorByteSize];
         MemorySegment.copy(mappedFile, ValueLayout.JAVA_BYTE, fileOffset, lastChunkPadded, 0, (int) mappedFile.byteSize() - fileOffset);
-        tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), 1, globalCount);
+        tapeStorage.ensureSize(ByteVector.SPECIES_PREFERRED.elementSize(), globalCount);
         for (int j = 0; j < findOperation.length; j++) {
             accumulator = findOperation[j].find(lastChunkPadded, 0, accumulator);
         }
