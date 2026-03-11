@@ -1,30 +1,14 @@
 package org.knownhosts.libfindchars.generator;
 
-public final class RangeOperation extends Operation {
+import java.util.Objects;
 
-    private byte from;
-    private byte to;
-    private final String name;
+public record RangeOperation(String name, byte from, byte to) {
 
-    public String getName() {
-        return name;
+    public RangeOperation {
+        Objects.requireNonNull(name, "range operation name is mandatory");
     }
 
-    public RangeOperation(String name) {
-        this.name = name;
-    }
-
-    public RangeOperation withRange(int from, int to) {
-        this.from = (byte) from;
-        this.to = (byte) to;
-        return this;
-    }
-
-    public byte getFrom() {
-        return from;
-    }
-
-    public byte getTo() {
-        return to;
+    public RangeOperation(String name, int from, int to) {
+        this(name, (byte) from, (byte) to);
     }
 }

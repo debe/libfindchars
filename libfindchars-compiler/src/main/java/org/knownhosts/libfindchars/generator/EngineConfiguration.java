@@ -1,47 +1,41 @@
 package org.knownhosts.libfindchars.generator;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-public class EngineConfiguration {
+public record EngineConfiguration(ShuffleOperation shuffleOperation,
+                                  List<RangeOperation> rangeOperations) {
 
-    private final List<RangeOperation> rangeOperations = new ArrayList<>();
-    private ShuffleOperation shuffleOperation;
-
-    private Target target;
-
-    public List<RangeOperation> getRangeOperations() {
-        return rangeOperations;
-    }
-
-
-    public ShuffleOperation getShuffleOperation() {
-        return shuffleOperation;
-    }
-
-
-    public EngineConfiguration withRangeOperations(RangeOperation... rangeOperations) {
-        if (rangeOperations != null) {
-            this.rangeOperations.addAll(Arrays.asList(rangeOperations));
+    public EngineConfiguration {
+        rangeOperations = rangeOperations != null ? List.copyOf(rangeOperations) : List.of();
+        if (shuffleOperation == null && rangeOperations.isEmpty()) {
+            throw new IllegalArgumentException("at least one operation is mandatory");
         }
-        return this;
     }
 
-
-    public EngineConfiguration withShuffleOperation(ShuffleOperation shuffleOperation) {
-        this.shuffleOperation = shuffleOperation;
-        return this;
+    public static Builder builder() {
+        return new Builder();
     }
 
-    public EngineConfiguration withTarget(Target target) {
-        this.target = target;
-        return this;
+    public static final class Builder {
+        private ShuffleOperation shuffleOperation;
+        private final List<RangeOperation> rangeOperations = new ArrayList<>();
+
+        private Builder() {}
+
+        public Builder shuffleOperation(ShuffleOperation shuffleOperation) {
+            this.shuffleOperation = shuffleOperation;
+            return this;
+        }
+
+        public Builder rangeOperations(RangeOperation... ops) {
+            Collections.addAll(rangeOperations, ops);
+            return this;
+        }
+
+        public EngineConfiguration build() {
+            return new EngineConfiguration(shuffleOperation, rangeOperations);
+        }
     }
-
-    public Target getTarget() {
-        return target;
-    }
-
-
 }

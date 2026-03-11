@@ -1,6 +1,12 @@
 package org.knownhosts.libfindchars.bench;
 
+import org.knownhosts.libfindchars.api.FindCharsEngine;
 import org.knownhosts.libfindchars.api.MatchStorage;
+import org.knownhosts.libfindchars.compiler.AsciiLiteral;
+import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
+import org.knownhosts.libfindchars.generator.EngineBuilder;
+import org.knownhosts.libfindchars.generator.EngineConfiguration;
+import org.knownhosts.libfindchars.generator.ShuffleOperation;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,16 +29,38 @@ public class BenchController {
     private final FindCharsEngine findCharsEngine;
     private final URI testDataURI;
     private final Random random = new Random();
+    private final byte STAR;
+    private final byte WHITESPACES;
+    private final byte PUNCTUATIONS;
+    private final byte PLUS;
+
     public BenchController() {
         try {
-            testDataURI = Objects.requireNonNull(FindCharsEngine.class.getClassLoader()
+            testDataURI = Objects.requireNonNull(BenchController.class.getClassLoader()
                     .getResource("3mb.txt")).toURI();
-            findCharsEngine = new FindCharsEngine();
-
         } catch (URISyntaxException e) {
             throw new RuntimeException(e);
         }
 
+        var config = EngineConfiguration.builder()
+                .shuffleOperation(
+                        new ShuffleOperation(
+                                new AsciiLiteralGroup(
+                                        "structurals",
+                                        new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
+                                        new AsciiLiteral("punctiations", ":;{}[]".toCharArray()),
+                                        new AsciiLiteral("star", "*".toCharArray()),
+                                        new AsciiLiteral("plus", "+".toCharArray())
+                                )
+                        ))
+                .build();
+        var result = EngineBuilder.build(config);
+        this.findCharsEngine = result.engine();
+        var literals = result.literals();
+        STAR = literals.get("star");
+        WHITESPACES = literals.get("whitespaces");
+        PUNCTUATIONS = literals.get("punctiations");
+        PLUS = literals.get("plus");
     }
 
     @GetMapping("findchars")
@@ -47,11 +75,17 @@ public class BenchController {
             var stop = Instant.now();
             System.out.println("Size is: "+match.size());
 
-                switch(match.getLiteralAt(matchStorage, index)) {
-                    case FindCharsLiterals.STAR -> System.out.println("* at: "+ match.getPositionAt(matchStorage, index));
-                    case FindCharsLiterals.WHITESPACES -> System.out.println("\\w at: "+ match.getPositionAt(matchStorage, index));
-                    case FindCharsLiterals.PUNCTIATIONS -> System.out.println("punctuations at: "+ match.getPositionAt(matchStorage, index));
-                    case FindCharsLiterals.PLUS -> System.out.println("+ at: "+ match.getPositionAt(matchStorage, index));
+            byte lit = match.getLiteralAt(matchStorage, index);
+            int pos = match.getPositionAt(matchStorage, index);
+
+            if (lit == STAR) {
+                System.out.println("* at: " + pos);
+            } else if (lit == WHITESPACES) {
+                System.out.println("\\w at: " + pos);
+            } else if (lit == PUNCTUATIONS) {
+                System.out.println("punctuations at: " + pos);
+            } else if (lit == PLUS) {
+                System.out.println("+ at: " + pos);
             }
 
             return start.until(stop, ChronoUnit.NANOS);

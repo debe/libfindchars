@@ -1,6 +1,5 @@
 package zz.customname;
 
-
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
@@ -8,12 +7,45 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 import org.knownhosts.libfindchars.api.MatchStorage;
+import org.knownhosts.libfindchars.compiler.AsciiLiteral;
+import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
+import org.knownhosts.libfindchars.generator.EngineBuilder;
+import org.knownhosts.libfindchars.generator.EngineConfiguration;
+import org.knownhosts.libfindchars.generator.RangeOperation;
+import org.knownhosts.libfindchars.generator.ShuffleOperation;
 
 class FindLiteralsAndPositions {
 
     public static void main(String[] args) throws Exception {
 
-        var findCharsEngine = new FindCharsEngine();
+        var config = EngineConfiguration.builder()
+                .shuffleOperation(
+                        new ShuffleOperation(
+                                new AsciiLiteralGroup(
+                                        "structurals",
+                                        new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
+                                        new AsciiLiteral("punctiations", ":;{}[]".toCharArray()),
+                                        new AsciiLiteral("star", "*".toCharArray()),
+                                        new AsciiLiteral("plus", "+".toCharArray())
+                                ),
+                                new AsciiLiteralGroup(
+                                        "numbers",
+                                        new AsciiLiteral("nums", "0123456789".toCharArray())
+                                )
+                        ))
+                .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+                .build();
+        var result = EngineBuilder.build(config);
+        var findCharsEngine = result.engine();
+        var literals = result.literals();
+
+        byte STAR = literals.get("star");
+        byte WHITESPACES = literals.get("whitespaces");
+        byte PUNCTIATIONS = literals.get("punctiations");
+        byte PLUS = literals.get("plus");
+        byte NUMS = literals.get("nums");
+        byte COMPARISON = literals.get("comparison");
+
         var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
 
         try (Arena arena = Arena.ofConfined();
@@ -23,21 +55,23 @@ class FindLiteralsAndPositions {
             var match = findCharsEngine.find(mappedFile, matchStorage);
 
             for (int i = 0; i < match.size(); i++) {
+                byte lit = match.getLiteralAt(matchStorage, i);
+                int pos = match.getPositionAt(matchStorage, i);
 
-                switch (match.getLiteralAt(matchStorage, i)) {
-                    case FindCharsLiterals.STAR -> System.out.println("* at: " + match.getPositionAt(matchStorage, i));
-                    case FindCharsLiterals.WHITESPACES ->
-                            System.out.println("\\w at: " + match.getPositionAt(matchStorage, i));
-                    case FindCharsLiterals.PUNCTIATIONS ->
-                            System.out.println("punctuations at: " + match.getPositionAt(matchStorage, i));
-                    case FindCharsLiterals.PLUS -> System.out.println("+ at: " + match.getPositionAt(matchStorage, i));
-                    case FindCharsLiterals.NUMS ->
-                            System.out.println("numbers at: " + match.getPositionAt(matchStorage, i));
-                    case FindCharsLiterals.COMPARISON ->
-                            System.out.println("<>= at: " + match.getPositionAt(matchStorage, i));
+                if (lit == STAR) {
+                    System.out.println("* at: " + pos);
+                } else if (lit == WHITESPACES) {
+                    System.out.println("\\w at: " + pos);
+                } else if (lit == PUNCTIATIONS) {
+                    System.out.println("punctuations at: " + pos);
+                } else if (lit == PLUS) {
+                    System.out.println("+ at: " + pos);
+                } else if (lit == NUMS) {
+                    System.out.println("numbers at: " + pos);
+                } else if (lit == COMPARISON) {
+                    System.out.println("<>= at: " + pos);
                 }
             }
         }
     }
-
 }

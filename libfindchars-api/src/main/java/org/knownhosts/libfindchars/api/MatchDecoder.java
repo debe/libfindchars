@@ -15,7 +15,7 @@ public class MatchDecoder {
         for (int i = 0; i < positionCache.length; i++) {
             positionCache[i] = Integer.numberOfTrailingZeros(bits) & 0x1f; // modulo 32 in fast;
             tapeStorage.getLiteralBuffer()[(arrayOffset) + i] = literalCacheSparse[positionCache[i]];
-            bits = bits & bits - 1;
+            bits = bits & (bits - 1);
         }
         var v = IntVector.fromArray(IntVector.SPECIES_PREFERRED, positionCache, 0);
         var added = v.add(offset);
@@ -33,7 +33,7 @@ public class MatchDecoder {
         var bits = (int) findMask.toLong();
         var count = findMask.trueCount();
 
-        if (count < 0) {
+        if (count == 0) {
             return 0;
         }
 

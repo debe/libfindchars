@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.knownhosts</groupId>
   	<artifactId>libfindchars-parent</artifactId>
-    <version>0.0.4</version>
+    <version>0.1.0</version>
   	<name>libfindchars parent</name>
   	<description>SIMD optimized character detection library</description>
     <packaging>pom</packaging>
@@ -53,12 +53,12 @@
 	                    <meminitial>256m</meminitial>
 	                    <encoding>UTF-8</encoding>
 	
-	                    <release>24</release>
+	                    <release>25</release>
 	
 	
 	                    <!-- IntelliJ needs these https://youtrack.jetbrains.com/issue/IDEA-195472 -->
-	                    <source>24</source>
-	                    <target>24</target>
+	                    <source>25</source>
+	                    <target>25</target>
 	
 	                    <debug>true</debug>
 	                    <debuglevel>lines,vars,source</debuglevel>

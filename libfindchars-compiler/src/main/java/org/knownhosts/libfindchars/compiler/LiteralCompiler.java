@@ -48,7 +48,7 @@ public class LiteralCompiler implements AutoCloseable {
         byte[] nibbles = new byte[2];
 
         nibbles[0] = (byte) ((int) _char & 15);
-        nibbles[1] = (byte) ((int) _char >> 4 % 15);
+        nibbles[1] = (byte) ((_char >> 4) & 0x0f);
         return nibbles;
     }
 
@@ -185,13 +185,10 @@ public class LiteralCompiler implements AutoCloseable {
                 return new AsciiFindMask(lowNibblesFound, highNibblesFound, literalMap);
 
             } else {
-                System.out.println("not satisfied");
-
+                throw new IllegalStateException("Z3 solver returned unsatisfiable - no valid mask configuration found");
             }
 
         }
-
-        return null;
 
     }
 
