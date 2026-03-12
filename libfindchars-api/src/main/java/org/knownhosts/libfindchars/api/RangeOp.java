@@ -20,6 +20,11 @@ public final class RangeOp implements FindOp {
         this(ByteVector.SPECIES_PREFERRED, lowerBound, upperBound, literal);
     }
 
+    // Package-private accessors for FindCharsEngine flattening
+    ByteVector lowerBoundVec() { return lowerBound; }
+    ByteVector upperBoundVec() { return upperBound; }
+    ByteVector literalVec() { return literal; }
+
     @Override
     public ByteVector apply(ByteVector inputVec, ByteVector accumulator) {
         var isGreater = inputVec.compare(VectorOperators.GE, lowerBound);

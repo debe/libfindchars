@@ -46,6 +46,12 @@ public final class ShuffleMaskOp implements FindOp {
         this(ByteVector.SPECIES_PREFERRED, findMasks);
     }
 
+    public int groupCount() { return lowNibbleMasks.length; }
+    public ByteVector lowLUT(int g) { return lowNibbleMasks[g]; }
+    public ByteVector highLUT(int g) { return highNibbleMasks[g]; }
+    public int literalCount(int g) { return literalMasks[g].length; }
+    public ByteVector literalVec(int g, int l) { return literalMasks[g][l]; }
+
     @Override
     public ByteVector apply(ByteVector inputVec, ByteVector accumulator) {
         for (int i = 0; i < lowNibbleMasks.length; i++) {

@@ -46,8 +46,6 @@ class MatchDecoderTest {
         }
      
 		
-		System.out.println(countsScalar);
-		System.out.println(countsVector);
 		Assertions.assertIterableEquals(countsScalar, countsVector);
 	}
 

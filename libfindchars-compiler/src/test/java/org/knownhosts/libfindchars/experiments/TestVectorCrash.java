@@ -49,7 +49,6 @@ public class TestVectorCrash {
 
         var op = new TestOP();
         for (int i = 0; i < 2_000; i++) {
-            System.out.println(i);
             var reduced = op.find();
             Assertions.assertNotNull(reduced);
         }

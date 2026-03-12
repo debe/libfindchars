@@ -44,7 +44,6 @@ class LiteralCompilerTest {
         var group = new AsciiLiteralGroup("whitespaces", whitespaces, structurals, star, plus);
         var result = literalCompiler.solve(group);
 
-        System.out.println(result);
         assertLiteralGroup(group, result, 0);
     }
 
@@ -68,8 +67,6 @@ class LiteralCompilerTest {
 
         var result = literalCompiler.solve(group1, group2, group3);
 
-
-        System.out.println(result);
         assertLiteralGroup(group1, result, 0);
         assertLiteralGroup(group2, result, 1);
         assertLiteralGroup(group3, result, 2);
@@ -92,7 +89,6 @@ class LiteralCompilerTest {
         var group = new AsciiLiteralGroup("whitespaces", whitespaces);
         var result = literalCompiler.solve(group);
 
-        System.out.println(result);
         assertLiteralGroup(group, result, 0);
     }
 

@@ -116,11 +116,6 @@ class TestVectorMerge {
                 }
 
                 if (bitset.cardinality() == bytes.length) {
-                    System.out.println("cardinality was: " + bitset.cardinality());
-                    System.out.println("bitset is " + bitset);
-                    System.out.println("i is " + i);
-                    System.out.println("k is " + String.format("0x%02X", k));
-
                     return i;
                 }
             }

@@ -58,20 +58,6 @@ class FindingEngineTest {
                 vecRes[i] = tape.getPositionAt(tapeStorage, i);
             }
 
-            System.out.print("\n");
-            for (int i = 0; i < 64; i++) {
-                System.out.print(scalarRes[i]);
-                System.out.print(" ");
-
-            }
-            System.out.print("\n");
-            for (int i = 0; i < 64; i++) {
-                System.out.print(vecRes[i]);
-                System.out.print(" ");
-
-            }
-            System.out.print("\n");
-
             Assertions.assertArrayEquals(scalarRes, vecRes);
         }
     }
