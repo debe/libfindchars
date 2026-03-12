@@ -3,7 +3,7 @@
   <parent>
     <groupId>org.knownhosts</groupId>
     <artifactId>libfindchars-parent</artifactId>
-    <version>0.1.0</version>
+    <version>0.3.0</version>
   </parent>
   <artifactId>libfindchars-examples</artifactId>
   <name>libfindchars-examples</name>
