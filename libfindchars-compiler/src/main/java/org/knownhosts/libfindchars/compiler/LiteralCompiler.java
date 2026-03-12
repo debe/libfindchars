@@ -54,7 +54,11 @@ public class LiteralCompiler implements AutoCloseable {
 
 
     public List<FindMask> solve(LiteralGroup... literalGroup) throws InterruptedException, SolverException {
-        List<Byte> usedLiterals = Lists.newArrayList();
+        return solve(List.of(), literalGroup);
+    }
+
+    public List<FindMask> solve(List<Byte> initialUsedLiterals, LiteralGroup... literalGroup) throws InterruptedException, SolverException {
+        List<Byte> usedLiterals = Lists.newArrayList(initialUsedLiterals);
         List<FindMask> masks = Lists.newArrayList();
 
         for (LiteralGroup group : literalGroup) {
@@ -77,12 +81,12 @@ public class LiteralCompiler implements AutoCloseable {
                 .map(l -> bitvectorManager.makeBitvector(8, l))
                 .toList();
 
-        // ascii nibble matrix
+        // nibble matrix (16×16 covers full 0x00-0xFF byte range)
         var lowNibbles = new BitvectorFormula[16];
-        var highNibbles = new BitvectorFormula[8];
+        var highNibbles = new BitvectorFormula[16];
 
-        // contraints
-        var equations = new BooleanFormula[16][8];
+        // constraints
+        var equations = new BooleanFormula[16][16];
         List<BooleanFormula> exclusions = Lists.newArrayList();
 
 

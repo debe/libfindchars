@@ -1,6 +1,6 @@
 package org.knownhosts.libfindchars.bench;
 
-import org.knownhosts.libfindchars.api.FindCharsEngine;
+import org.knownhosts.libfindchars.api.FindEngine;
 import org.knownhosts.libfindchars.api.MatchStorage;
 import org.knownhosts.libfindchars.compiler.AsciiLiteral;
 import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 @RestController
 public class BenchController {
 
-    private final FindCharsEngine findCharsEngine;
+    private final FindEngine findCharsEngine;
     private final URI testDataURI;
     private final Random random = new Random();
     private final byte STAR;
@@ -73,21 +73,6 @@ public class BenchController {
             var start = Instant.now();
             var match = findCharsEngine.find(mappedFile, matchStorage);
             var stop = Instant.now();
-            System.out.println("Size is: "+match.size());
-
-            byte lit = match.getLiteralAt(matchStorage, index);
-            int pos = match.getPositionAt(matchStorage, index);
-
-            if (lit == STAR) {
-                System.out.println("* at: " + pos);
-            } else if (lit == WHITESPACES) {
-                System.out.println("\\w at: " + pos);
-            } else if (lit == PUNCTUATIONS) {
-                System.out.println("punctuations at: " + pos);
-            } else if (lit == PLUS) {
-                System.out.println("+ at: " + pos);
-            }
-
             return start.until(stop, ChronoUnit.NANOS);
         }
     }
@@ -102,7 +87,6 @@ public class BenchController {
             var start = Instant.now();
             var res = scalarEngine.regex(mappedFile);
             var stop = Instant.now();
-            System.out.println("something found: "+ res.get(index));
             return start.until(stop, ChronoUnit.NANOS);
 
         }
@@ -118,7 +102,6 @@ public class BenchController {
             var start = Instant.now();
             var res = scalarEngine.bitset(mappedFile);
             var stop = Instant.now();
-            System.out.println("something found at: "+ res.get(index));
             return start.until(stop, ChronoUnit.NANOS);
 
         }
