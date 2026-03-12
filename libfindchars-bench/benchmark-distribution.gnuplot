@@ -1,0 +1,167 @@
+set terminal pngcairo size 900,520 enhanced font "sans,12"
+set output "libfindchars-bench/benchmark-distribution.png"
+
+set title "libfindchars 0.3.0 — JMH Point Distribution (3 forks × 10 iterations)\n{/*0.8 3 MB mixed ASCII/UTF-8 file, JDK 25, AVX-512, single core}" font ",13"
+set ylabel "Throughput (GB/s)" font ",12"
+set yrange [0:2.3]
+set grid y
+set key off
+
+set xtics ("Regex" 1, "ASCII compiled" 2, "UTF-8 compiled" 3) font ",12"
+set xrange [0.4:3.6]
+set bmargin 4
+
+# Factor: ops/s * 3e6 / 1e9 = ops/s * 0.003
+f = 0.003
+
+# Color per fork
+set style line 1 lc rgb "#cc3333" pt 7 ps 0.9   # fork 1
+set style line 2 lc rgb "#2266bb" pt 7 ps 0.9   # fork 2
+set style line 3 lc rgb "#33aa55" pt 7 ps 0.9   # fork 3
+
+# Jitter offsets per fork
+jf1 = -0.12
+jf2 =  0.00
+jf3 =  0.12
+
+# Mean markers
+set style line 10 lc rgb "#000000" pt 1 ps 1.8 lw 2.5
+
+# --- Regex raw data (fork 1, 2, 3) ---
+$REGEX_F1 << EOD
+26.909727900223256
+26.90204896715935
+26.805387339202213
+26.671856575303742
+26.947313125376215
+26.906144962707575
+27.002928294947726
+26.88779221506937
+26.745560364020985
+27.10123247742592
+EOD
+
+$REGEX_F2 << EOD
+36.65341912375817
+36.02104100378195
+35.677105957996915
+35.82959772952139
+36.04487781735764
+36.46782819235781
+36.930217657829644
+36.57018747810391
+36.55241548956816
+36.231335975638316
+EOD
+
+$REGEX_F3 << EOD
+35.38668699990944
+35.02656090870107
+34.72486927006929
+34.71999084281074
+35.670641163158336
+36.03120355593077
+35.74111356854102
+36.22481823193927
+35.7798748393342
+35.9027176014572
+EOD
+
+# --- ASCII compiled raw data ---
+$ASCII_F1 << EOD
+673.5876700436595
+683.2027945711128
+682.9811689879926
+683.6680237973364
+684.0819285318956
+681.8876230827127
+683.6225897423906
+683.0847245313296
+690.5003125438245
+692.9098179599207
+EOD
+
+$ASCII_F2 << EOD
+658.5944572910339
+657.0785596804818
+659.42481538593
+651.5059024840974
+647.8066472065883
+638.4236196645417
+637.4965039861587
+637.7594199272991
+635.649679477347
+633.3416597116379
+EOD
+
+$ASCII_F3 << EOD
+682.0698463450027
+685.8181943973926
+684.0202388227805
+684.0374382497561
+687.1119181524667
+689.3321832528509
+688.0225538786068
+690.3518466003749
+689.6185271674194
+688.2248124766684
+EOD
+
+# --- UTF-8 compiled raw data ---
+$UTF8_F1 << EOD
+563.8193319885349
+592.9763739415071
+594.7223431690893
+597.8914420466505
+601.6732324707916
+594.720549734488
+592.6315893871943
+596.2301869338233
+587.741888447753
+578.6376657732578
+EOD
+
+$UTF8_F2 << EOD
+601.9537712381307
+598.4802695597498
+601.3482905941135
+602.3649735928091
+604.1669613020836
+593.9409000295308
+600.2674659989381
+602.0492191890387
+594.3339109672938
+597.7493983467383
+EOD
+
+$UTF8_F3 << EOD
+580.4881232509648
+598.7066385367701
+563.7741351682275
+547.7667433921279
+573.4544922389858
+551.2013968170343
+498.1816226012858
+584.9937230473001
+600.5755294313373
+575.0776260945754
+EOD
+
+# Mean values (ops/s)
+regex_mean   = 32.902
+ascii_mean   = 672.174
+utf8_mean    = 585.731
+
+plot \
+    $REGEX_F1 using (1+jf1):($1*f) with points ls 1 notitle, \
+    $REGEX_F2 using (1+jf2):($1*f) with points ls 2 notitle, \
+    $REGEX_F3 using (1+jf3):($1*f) with points ls 3 notitle, \
+    $ASCII_F1 using (2+jf1):($1*f) with points ls 1 notitle, \
+    $ASCII_F2 using (2+jf2):($1*f) with points ls 2 notitle, \
+    $ASCII_F3 using (2+jf3):($1*f) with points ls 3 notitle, \
+    $UTF8_F1  using (3+jf1):($1*f) with points ls 1 notitle, \
+    $UTF8_F2  using (3+jf2):($1*f) with points ls 2 notitle, \
+    $UTF8_F3  using (3+jf3):($1*f) with points ls 3 notitle, \
+    '+' using (1):(regex_mean*f) with points ls 10 title "Mean", \
+    '+' using (2):(ascii_mean*f) with points ls 10 notitle, \
+    '+' using (3):(utf8_mean*f)  with points ls 10 notitle

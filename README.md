@@ -5,20 +5,22 @@
 libfindchars
 ====
 
-libfindchars is a character detection library that can find any ASCII character in byte sequences really fast using SIMD instructions on the JVM.
+libfindchars is a character detection library that can find ASCII and multi-byte UTF-8 characters in byte sequences really fast using SIMD instructions on the JVM.
 Use cases are tokenizers, parsers or various pre-processing steps involving fast character detection.
 As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
 
-See the [Benchmark](#benchmark) how fast it is. It typically reaches around **1 GiB/s** throughput
-on a single core for a text file containing 20% tokens.
+See the [Benchmark](#benchmark) how fast it is. It typically reaches around **2 GB/s** throughput for ASCII
+and **1.8 GB/s** for UTF-8 on a single core.
 
 Here are some tricks it uses:
- * vector shuffle mask operation which acts as lookup table hack.
+ * Vector shuffle mask operation which acts as a lookup table hack.
    To do this the compiler builds and solves an equation system containing hundreds of bitwise operations
    in equations and inequations to actually find a working vector configuration (only two vectors needed most of the time).
    This is done by using the theorem prover [z3](https://github.com/Z3Prover/z3) as normal SAT solving systems
    are simply not clever enough to find a solution.
- * vector range operation to find character ranges quickly.
+ * UTF-8 multi-byte character detection via per-round shuffle mask solving across continuation bytes.
+ * Bytecode-compiled engine with `BytecodeInliner` for zero-overhead inlined SIMD — the engine operations are compiled into a single class, eliminating virtual dispatch entirely.
+ * Vector range operation to find character ranges quickly.
  * Bit hacks to calculate the positions quickly.
  * Auto growing native arrays and memory segments.
  * Sealed-interface runtime engine with bimorphic dispatch for optimal C2 JIT inlining.
@@ -93,19 +95,18 @@ try (Arena arena = Arena.ofConfined();
 Benchmark
 ---------
 
-The following benchmark was done by parsing a 3 MB clear text file and finding 13 different tokens
-with a token density is approx 20% in this file. Three tests where conducted using a combination of
-the actual finding algorithm implemented in java and the measurement and evaluation code using
-the great [criterion.rs](https://github.com/bheisler/criterion.rs) benchmarking kit for rust.
+JMH benchmark on a 3 MB mixed ASCII/UTF-8 file, detecting 26 distinct characters
+(21 ASCII + 5 multi-byte UTF-8) across 2 shuffle groups and 1 range operation.
+Environment: JDK 25, AVX-512, single core.
 
-Libfindchars beat them all by an order of magnitude to reach an average of **1 GiB/s** throughput
-using a single core.
+![benchmark](./libfindchars-bench/benchmark.png)
 
-1. libfindchars using a generated engine:
-   ![regex](./doc/libfindchars.png)
-2. A compiled regex Pattern to find tokens and have the knowledge which token it was:
-   ![regex](./doc/regex.png)
-3. A bitset to find tokens without the knowledge which token matched. Only useful for one token group e.g. all whitespaces:
-   ![regex](./doc/bitset.png)
-4. In addition, see violin plot of all together:
-   ![violin](./doc/violin.png)
+| Engine             | Ops/s | Throughput |
+|--------------------|------:|------------|
+| ASCII compiled     |   672 | ~2.0 GB/s  |
+| UTF-8 compiled     |   586 | ~1.8 GB/s  |
+| Regex baseline     |    33 | ~0.1 GB/s  |
+
+The compiled engines use bytecode-generated SIMD kernels via `BytecodeInliner`,
+eliminating all virtual dispatch overhead. Both ASCII and UTF-8 engines outperform
+compiled regex by roughly **20x**.
