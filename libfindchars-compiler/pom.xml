@@ -38,13 +38,10 @@
   		<artifactId>java-smt</artifactId>
   		<version>4.1.0</version>
   	</dependency>
-	<!-- https://mvnrepository.com/artifact/org.sosy-lab/javasmt-solver-z3 -->
 	<dependency>
 	    <groupId>org.sosy-lab</groupId>
 	    <artifactId>javasmt-solver-z3</artifactId>
-	    <version>4.12.2</version>
-	    <type>jar</type>
-        <classifier>com.microsoft.z3</classifier>
+	    <version>4.14.0</version>
 	</dependency>
   </dependencies>
 </project>
