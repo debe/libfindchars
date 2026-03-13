@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.knownhosts</groupId>
   	<artifactId>libfindchars-parent</artifactId>
-    <version>0.3.0-jdk25-preview</version>
+    <version>0.4.0-jdk25-preview</version>
   	<name>libfindchars parent</name>
   	<description>SIMD optimized character detection library</description>
     <packaging>pom</packaging>
