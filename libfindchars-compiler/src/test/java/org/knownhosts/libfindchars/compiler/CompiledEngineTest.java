@@ -61,7 +61,7 @@ class CompiledEngineTest {
     void compiledEngineWithMultipleGroups() {
         var result = Utf8EngineBuilder.builder()
                 .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
-                .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+                .codepoints("punctuation", ':', ';', '{', '}', '[', ']')
                 .codepoints("star", '*')
                 .codepoints("plus", '+')
                 .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
@@ -73,7 +73,7 @@ class CompiledEngineTest {
 
         assertEquals(6, literals.size(), "Should have 6 literals");
         assertTrue(literals.containsKey("whitespaces"));
-        assertTrue(literals.containsKey("punctiations"));
+        assertTrue(literals.containsKey("punctuation"));
         assertTrue(literals.containsKey("star"));
         assertTrue(literals.containsKey("plus"));
         assertTrue(literals.containsKey("nums"));
@@ -91,7 +91,7 @@ class CompiledEngineTest {
         assertTrue(view.size() > 0, "Should find matches");
 
         // Verify colon at position 1 has punctuation literal
-        byte punctLit = literals.get("punctiations");
+        byte punctLit = literals.get("punctuation");
         assertEquals(1, view.getPositionAt(storage, 0));
         assertEquals(punctLit, view.getLiteralAt(storage, 0));
     }

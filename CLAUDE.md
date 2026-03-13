@@ -30,7 +30,7 @@ mvn test -Dtest=LiteralCompilerTest -pl libfindchars-compiler
 mvn test -Dtest=LiteralCompilerTest#testMethodName -pl libfindchars-compiler
 ```
 
-**Important**: This project requires JDK 25 installed (for `jdk.incubator.vector` access) with preview features enabled. The build compiles with `--release 25`. Maven coordinates: `org.knownhosts:libfindchars-parent:0.3.0-jdk25-preview`.
+**Important**: This project requires JDK 25 installed (for `jdk.incubator.vector` access) with preview features enabled. The build compiles with `--release 25`. Maven coordinates: `org.knownhosts:libfindchars-compiler:0.3.0-jdk25-preview`.
 
 ## Module Architecture
 

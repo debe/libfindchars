@@ -24,15 +24,15 @@ Prerequisites:
   - gh CLI authenticated (for GitHub release)
 
 Arguments:
-  version       Release version (e.g. 0.3.1)
+  version       Release version (e.g. 0.3.1-jdk25-preview)
 
 Options:
   --dry-run     Build and sign only (mvn verify); skip upload, tag, release
   -h, --help    Show this help
 
 Example:
-  $(basename "$0") 0.3.1
-  $(basename "$0") --dry-run 0.3.1
+  $(basename "$0") 0.3.1-jdk25-preview
+  $(basename "$0") --dry-run 0.3.1-jdk25-preview
 EOF
 }
 

@@ -28,6 +28,26 @@ import org.slf4j.LoggerFactory;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorSpecies;
 
+/**
+ * Unified entry point for building character detection engines.
+ *
+ * <p>Use the fluent {@link #builder()} API to declare ASCII character groups
+ * ({@link Builder#codepoints}), individual multi-byte UTF-8 codepoints
+ * ({@link Builder#codepoint}), and byte range operations ({@link Builder#range}),
+ * then call {@link Builder#build()} to obtain a ready-to-use
+ * {@link Utf8BuildResult} containing the compiled {@link FindEngine} and
+ * a literal map.
+ *
+ * <pre>{@code
+ * var result = Utf8EngineBuilder.builder()
+ *         .codepoints("whitespace", '\r', '\n', '\t', ' ')
+ *         .codepoint("eacute", 0xE9)
+ *         .range("comparison", (byte) 0x3c, (byte) 0x3e)
+ *         .build();
+ * FindEngine engine = result.engine();
+ * Map<String, Byte> literals = result.literals();
+ * }</pre>
+ */
 public class Utf8EngineBuilder {
 
     static final Logger logger = LoggerFactory.getLogger(Utf8EngineBuilder.class);

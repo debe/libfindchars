@@ -16,7 +16,6 @@ import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
-import java.util.Random;
 import java.util.regex.Pattern;
 
 @RestController
@@ -24,7 +23,6 @@ public class BenchController {
 
     private final FindEngine findCharsEngine;
     private final URI testDataURI;
-    private final Random random = new Random();
     private final byte STAR;
     private final byte WHITESPACES;
     private final byte PUNCTUATIONS;
@@ -40,7 +38,7 @@ public class BenchController {
 
         var result = Utf8EngineBuilder.builder()
                 .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
-                .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+                .codepoints("punctuation", ':', ';', '{', '}', '[', ']')
                 .codepoints("star", '*')
                 .codepoints("plus", '+')
                 .build();
@@ -48,7 +46,7 @@ public class BenchController {
         var literals = result.literals();
         STAR = literals.get("star");
         WHITESPACES = literals.get("whitespaces");
-        PUNCTUATIONS = literals.get("punctiations");
+        PUNCTUATIONS = literals.get("punctuation");
         PLUS = literals.get("plus");
     }
 
@@ -56,7 +54,6 @@ public class BenchController {
     public long findchars() throws IOException {
         try(Arena arena = Arena.ofConfined();
             var channel = FileChannel.open(Path.of(testDataURI), StandardOpenOption.READ)) {
-            var index = random.nextInt(128);
             var mappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
             var matchStorage = new MatchStorage((int) (channel.size() / 4), 32);
             var start = Instant.now();
@@ -70,7 +67,6 @@ public class BenchController {
     public long regex() throws IOException {
         try(Arena arena = Arena.ofConfined();
             var channel = FileChannel.open(Path.of(testDataURI), StandardOpenOption.READ)) {
-            var index = random.nextInt(128);
             var mappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena).asByteBuffer();
             var scalarEngine = new ScalarEngine(Pattern.compile("[\r\n\t\f :;{}\\[\\]*+]"));
             var start = Instant.now();
@@ -85,7 +81,6 @@ public class BenchController {
     public long bitset() throws IOException {
         try(Arena arena = Arena.ofConfined();
             var channel = FileChannel.open(Path.of(testDataURI), StandardOpenOption.READ)) {
-            var index = random.nextInt(128);
             var mappedFile = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena).asByteBuffer();
             var scalarEngine = new ScalarEngine("\r\n\t\f :;{}[]*+");
             var start = Instant.now();

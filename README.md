@@ -60,7 +60,7 @@ Your application must be launched with:
 ```java
 var result = Utf8EngineBuilder.builder()
         .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
-        .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+        .codepoints("punctuation", ':', ';', '{', '}', '[', ']')
         .codepoints("star", '*')
         .codepoints("plus", '+')
         .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')

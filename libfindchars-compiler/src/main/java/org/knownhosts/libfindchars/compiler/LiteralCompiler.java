@@ -28,6 +28,18 @@ import org.sosy_lab.java_smt.api.SolverException;
 import com.google.common.collect.Lists;
 
 
+/**
+ * Solves for SIMD shuffle mask configurations using the Z3 theorem prover.
+ *
+ * <p>Given a set of {@link AsciiLiteralGroup}s, the compiler builds a constraint
+ * system over 8-bit bitvectors representing low-nibble and high-nibble lookup
+ * tables.  Z3 finds values such that {@code lowLUT[lo(c)] & highLUT[hi(c)]}
+ * yields a unique non-zero literal byte for every target character {@code c},
+ * and zero for all non-target nibble pairs.
+ *
+ * <p>Implements {@link AutoCloseable} &mdash; the underlying Z3 solver context
+ * is released on {@link #close()}.
+ */
 public class LiteralCompiler implements AutoCloseable {
 
     private final SolverContext context;
@@ -43,6 +55,12 @@ public class LiteralCompiler implements AutoCloseable {
     }
 
 
+    /**
+     * Splits a character into its low and high nibbles.
+     *
+     * @param _char the character to split
+     * @return a 2-element array: {@code [lowNibble, highNibble]}
+     */
     public static byte[] toNibbles(char _char) {
         byte[] nibbles = new byte[2];
 
@@ -52,14 +70,40 @@ public class LiteralCompiler implements AutoCloseable {
     }
 
 
+    /**
+     * Solves for shuffle masks for the given literal groups with no prior literal
+     * reservations and default vector size.
+     *
+     * @param literalGroup one or more groups of characters to solve
+     * @return one {@link AsciiFindMask} per group
+     */
     public List<AsciiFindMask> solve(AsciiLiteralGroup... literalGroup) throws InterruptedException, SolverException {
         return solve(List.of(), literalGroup);
     }
 
+    /**
+     * Solves for shuffle masks, avoiding literal bytes already in use.
+     *
+     * @param initialUsedLiterals literal byte values that must not be reused
+     * @param literalGroup        one or more groups of characters to solve
+     * @return one {@link AsciiFindMask} per group
+     */
     public List<AsciiFindMask> solve(List<Byte> initialUsedLiterals, AsciiLiteralGroup... literalGroup) throws InterruptedException, SolverException {
         return solve(initialUsedLiterals, 0, literalGroup);
     }
 
+    /**
+     * Solves for shuffle masks with reserved literals and an explicit vector byte size.
+     *
+     * <p>When {@code vectorByteSize > 0}, literal bytes are constrained to
+     * {@code [1, vectorByteSize)} so that a single {@code vpermb} cleanup LUT
+     * can map non-matching lanes to zero.
+     *
+     * @param initialUsedLiterals literal byte values that must not be reused
+     * @param vectorByteSize      SIMD vector width in bytes (0 for unconstrained)
+     * @param literalGroup        one or more groups of characters to solve
+     * @return one {@link AsciiFindMask} per group
+     */
     public List<AsciiFindMask> solve(List<Byte> initialUsedLiterals, int vectorByteSize, AsciiLiteralGroup... literalGroup) throws InterruptedException, SolverException {
         List<Byte> usedLiterals = Lists.newArrayList(initialUsedLiterals);
         List<AsciiFindMask> masks = Lists.newArrayList();

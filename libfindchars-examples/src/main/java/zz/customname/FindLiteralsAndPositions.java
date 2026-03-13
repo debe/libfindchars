@@ -15,7 +15,7 @@ class FindLiteralsAndPositions {
 
         var result = Utf8EngineBuilder.builder()
                 .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
-                .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+                .codepoints("punctuation", ':', ';', '{', '}', '[', ']')
                 .codepoints("star", '*')
                 .codepoints("plus", '+')
                 .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
@@ -26,7 +26,7 @@ class FindLiteralsAndPositions {
 
         byte STAR = literals.get("star");
         byte WHITESPACES = literals.get("whitespaces");
-        byte PUNCTIATIONS = literals.get("punctiations");
+        byte PUNCTUATION = literals.get("punctuation");
         byte PLUS = literals.get("plus");
         byte NUMS = literals.get("nums");
         byte COMPARISON = literals.get("comparison");
@@ -47,7 +47,7 @@ class FindLiteralsAndPositions {
                     System.out.println("* at: " + pos);
                 } else if (lit == WHITESPACES) {
                     System.out.println("\\w at: " + pos);
-                } else if (lit == PUNCTIATIONS) {
+                } else if (lit == PUNCTUATION) {
                     System.out.println("punctuations at: " + pos);
                 } else if (lit == PLUS) {
                     System.out.println("+ at: " + pos);
