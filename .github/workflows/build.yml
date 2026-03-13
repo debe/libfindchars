@@ -23,4 +23,11 @@ jobs:
         with:
           java-version: '25-ea'
           distribution: 'temurin'
-      - run: ./mvnw verify
+      - name: Download Z3 native libraries
+        run: |
+          Z3_VERSION=4.14.0
+          BASE_URL="https://repo.maven.apache.org/maven2/org/sosy-lab/javasmt-solver-z3/${Z3_VERSION}"
+          mkdir -p native
+          curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3-x64.so" -o native/libz3.so
+          curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3java-x64.so" -o native/libz3java.so
+      - run: LD_LIBRARY_PATH=$PWD/native ./mvnw verify
