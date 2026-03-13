@@ -10,7 +10,7 @@ Use cases are tokenizers, parsers or various pre-processing steps involving fast
 As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
 
 See the [Benchmark](#benchmark) how fast it is. It typically reaches around **2 GB/s** throughput for pure ASCII
-and **1.5 GB/s** for mixed ASCII/UTF-8 on a single core.
+and **1.8 GB/s** for mixed ASCII/UTF-8 on a single core.
 
 Here are some tricks it uses:
  * Vector shuffle mask operation which acts as a lookup table hack.
@@ -24,6 +24,34 @@ Here are some tricks it uses:
  * Vector range operation to find character ranges quickly (e.g. `<=>`, `0-9`).
  * Bit hacks to calculate the positions quickly.
  * Auto growing native arrays and memory segments.
+
+## Installation
+
+Requires **JDK 25**. Bytecode is compiled with `--enable-preview` and depends on `jdk.incubator.vector`.
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>org.knownhosts</groupId>
+    <artifactId>libfindchars-compiler</artifactId>
+    <version>0.3.0-jdk25-preview</version>
+</dependency>
+```
+
+### Gradle
+
+```kotlin
+implementation("org.knownhosts:libfindchars-compiler:0.3.0-jdk25-preview")
+```
+
+### Runtime JVM arguments
+
+Your application must be launched with:
+
+```
+--enable-preview --add-modules=jdk.incubator.vector
+```
 
 ## Usage
 
@@ -87,6 +115,8 @@ try (Arena arena = Arena.ofConfined();
 
 Requires JDK 25 with `--enable-preview` and `--add-modules=jdk.incubator.vector`.
 
+> **Note**: Published artifacts use the version format `{semver}-jdk25-preview` (e.g. `0.3.0-jdk25-preview`) to signal that bytecode is compiled with `--enable-preview` and locked to JDK 25. Consumers must run JDK 25 and pass `--add-modules=jdk.incubator.vector` at runtime.
+
 ```bash
 mvn clean install
 ```
@@ -102,11 +132,10 @@ Environment: JDK 25, AVX-512, single core.
 
 | Engine             | Ops/s | Throughput |
 |--------------------|------:|------------|
-| ASCII compiled     |   665 | ~2.0 GB/s  |
-| UTF-8 compiled     |   497 | ~1.5 GB/s  |
-| UTF-8 C2 JIT       |   139 | ~0.4 GB/s  |
-| Regex baseline     |    26 | ~0.1 GB/s  |
+| ASCII compiled     |   672 | ~2.0 GB/s  |
+| UTF-8 compiled     |   586 | ~1.8 GB/s  |
+| Regex baseline     |    33 | ~0.1 GB/s  |
 
 The compiled engines use bytecode-generated SIMD kernels via `BytecodeInliner`,
 eliminating all virtual dispatch overhead. The compiled engines outperform
-compiled regex by roughly **19-26x**.
+compiled regex by roughly **18-20x**.

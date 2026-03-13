@@ -30,7 +30,7 @@ mvn test -Dtest=LiteralCompilerTest -pl libfindchars-compiler
 mvn test -Dtest=LiteralCompilerTest#testMethodName -pl libfindchars-compiler
 ```
 
-**Important**: This project requires JDK 25 installed (for `jdk.incubator.vector` access) with preview features enabled. The build compiles with `--release 25`. Maven coordinates: `org.knownhosts:libfindchars-parent:0.3.0`.
+**Important**: This project requires JDK 25 installed (for `jdk.incubator.vector` access) with preview features enabled. The build compiles with `--release 25`. Maven coordinates: `org.knownhosts:libfindchars-parent:0.3.0-jdk25-preview`.
 
 ## Module Architecture
 
@@ -82,6 +82,27 @@ JMH benchmarks and Spring Boot application for performance testing against regex
 **Constraint Solving**: Character detection is modeled as a constraint satisfaction problem solved by Z3. The compiler builds equations where each character must map to a unique literal ID through bitwise operations on shuffle masks. This mathematical approach finds solutions that would be impractical to discover manually.
 
 **Annotation-Driven Template**: `Utf8EngineTemplate` is readable Java annotated with `@Inline`. The `TemplateTransformer` specializes it by constant-folding `@Inline int` fields and inlining `@Inline` private methods. Then `BytecodeInliner` transplants `@Inline`-annotated static method bodies from `Utf8Kernel`, producing flat inlined bytecodes.
+
+## Releasing
+
+Release to Maven Central via `scripts/release.sh`:
+
+```bash
+# Full release: build, sign, upload, tag, GitHub release
+scripts/release.sh 0.3.1-jdk25-preview
+
+# Dry run: build and sign only (no upload, no tag)
+scripts/release.sh --dry-run 0.3.1-jdk25-preview
+```
+
+**Version naming convention**: Versions use the format `{semver}-jdk{N}-preview` while the library depends on `--enable-preview` and `jdk.incubator.vector`. The `-jdk25-preview` suffix signals that bytecode is locked to JDK 25 and requires `--add-modules=jdk.incubator.vector` at runtime. Drop the suffix when Vector API graduates from incubator.
+
+Prerequisites:
+- GPG signing key available to `gpg-agent`
+- `~/.m2/settings.xml` with `<server id="central">` credentials (Central Portal token)
+- `gh auth login` (GitHub CLI authenticated)
+
+Tag format: `v{version}` (e.g. `v0.3.1-jdk25-preview`). Only `libfindchars-api` and `libfindchars-compiler` are published; examples and bench skip deployment.
 
 ## Development Notes
 

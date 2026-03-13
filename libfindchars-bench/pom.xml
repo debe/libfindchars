@@ -3,11 +3,15 @@
   <parent>
     <groupId>org.knownhosts</groupId>
     <artifactId>libfindchars-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.0-jdk25-preview</version>
   </parent>
   <artifactId>libfindchars-bench</artifactId>
   <name>libfindchars-bench</name>
   <description>benchmark for libfindchars</description>
+  <properties>
+      <maven.deploy.skip>true</maven.deploy.skip>
+      <maven.install.skip>true</maven.install.skip>
+  </properties>
   <dependencies>
 	  <dependency>
 		  <groupId>org.knownhosts</groupId>
