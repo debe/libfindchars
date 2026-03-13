@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-import org.knownhosts.libfindchars.api.FindMask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.sosy_lab.common.ShutdownManager;
@@ -53,23 +52,31 @@ public class LiteralCompiler implements AutoCloseable {
     }
 
 
-    public List<FindMask> solve(LiteralGroup... literalGroup) throws InterruptedException, SolverException {
+    public List<AsciiFindMask> solve(AsciiLiteralGroup... literalGroup) throws InterruptedException, SolverException {
         return solve(List.of(), literalGroup);
     }
 
-    public List<FindMask> solve(List<Byte> initialUsedLiterals, LiteralGroup... literalGroup) throws InterruptedException, SolverException {
-        List<Byte> usedLiterals = Lists.newArrayList(initialUsedLiterals);
-        List<FindMask> masks = Lists.newArrayList();
+    public List<AsciiFindMask> solve(List<Byte> initialUsedLiterals, AsciiLiteralGroup... literalGroup) throws InterruptedException, SolverException {
+        return solve(initialUsedLiterals, 0, literalGroup);
+    }
 
-        for (LiteralGroup group : literalGroup) {
-            var mask = solve1(group, usedLiterals);
+    public List<AsciiFindMask> solve(List<Byte> initialUsedLiterals, int vectorByteSize, AsciiLiteralGroup... literalGroup) throws InterruptedException, SolverException {
+        List<Byte> usedLiterals = Lists.newArrayList(initialUsedLiterals);
+        List<AsciiFindMask> masks = Lists.newArrayList();
+
+        for (AsciiLiteralGroup group : literalGroup) {
+            var mask = solve1(group, usedLiterals, vectorByteSize);
             usedLiterals.addAll(mask.literals().values());
             masks.add(mask);
         }
         return masks;
     }
 
-    public FindMask solve1(LiteralGroup literalGroup, List<Byte> usedLiterals) throws InterruptedException, SolverException {
+    public AsciiFindMask solve1(AsciiLiteralGroup literalGroup, List<Byte> usedLiterals) throws InterruptedException, SolverException {
+        return solve1(literalGroup, usedLiterals, 0);
+    }
+
+    public AsciiFindMask solve1(AsciiLiteralGroup literalGroup, List<Byte> usedLiterals, int vectorByteSize) throws InterruptedException, SolverException {
         // Assume we have a SolverContext instance.
         FormulaManager formulaManager = context.getFormulaManager();
         BitvectorFormulaManager bitvectorManager = formulaManager.getBitvectorFormulaManager();
@@ -102,7 +109,7 @@ public class LiteralCompiler implements AutoCloseable {
             highNibbles[i] = bitvectorManager.makeVariable(8, "h_" + i);
         }
 
-        for (Literal literal : literalGroup.literals()) {
+        for (ByteLiteral literal : literalGroup.literals()) {
             var literalVector = bitvectorManager.makeVariable(8, literal.name());
             literalVectors.add(literalVector);
 
@@ -119,18 +126,25 @@ public class LiteralCompiler implements AutoCloseable {
             }
         }
 
-        // build not matching constraints
+        // build not matching constraints: for non-target nibble pairs, ensure that
+        // the AND result does not equal any literal byte value.
+        // When vectorByteSize > 0 (vpermb cleanup mode), use modular comparison
+        // (lower log2(vectorByteSize) bits) to enable single vpermb cleanup LUT.
         for (int i = 0; i < lowNibbles.length; i++) {
             for (int j = 0; j < highNibbles.length; j++) {
                 if (equations[i][j] == null) {
                     final int _i = i;
                     final int _j = j;
 
+                    BitvectorFormula andResult = bitvectorManager.and(lowNibbles[_i], highNibbles[_j]);
+                    BitvectorFormula compareValue = (vectorByteSize > 0)
+                            ? bitvectorManager.and(andResult, bitvectorManager.makeBitvector(8, vectorByteSize - 1))
+                            : andResult;
+
                     equations[i][j] = literalVectors
                             .stream()
                             .map(lit -> booleanManager.not(
-                                    bitvectorManager.equal(
-                                            bitvectorManager.and(lowNibbles[_i], highNibbles[_j]), lit)))
+                                    bitvectorManager.equal(compareValue, lit)))
                             .reduce(booleanManager.makeTrue(), booleanManager::and);
 
 
@@ -142,6 +156,11 @@ public class LiteralCompiler implements AutoCloseable {
 
         for (BitvectorFormula bitvectorFormula : literalVectors) {
             exclusions.add(bitvectorManager.greaterThan(bitvectorFormula, zeroVector, true));
+            if (vectorByteSize > 0) {
+                // Constrain literal bytes to [1, vectorByteSize-1] so vpermb cleanup LUT works
+                BitvectorFormula maxLiteral = bitvectorManager.makeBitvector(8, vectorByteSize);
+                exclusions.add(bitvectorManager.lessThan(bitvectorFormula, maxLiteral, false));
+            }
             for (BitvectorFormula usedLiteral : usedLiteralsVectors) {
                 exclusions.add(booleanManager.not(bitvectorManager.equal(bitvectorFormula, usedLiteral)));
             }

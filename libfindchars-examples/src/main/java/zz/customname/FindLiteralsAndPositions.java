@@ -7,35 +7,20 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 import org.knownhosts.libfindchars.api.MatchStorage;
-import org.knownhosts.libfindchars.compiler.AsciiLiteral;
-import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
-import org.knownhosts.libfindchars.generator.EngineBuilder;
-import org.knownhosts.libfindchars.generator.EngineConfiguration;
-import org.knownhosts.libfindchars.generator.RangeOperation;
-import org.knownhosts.libfindchars.generator.ShuffleOperation;
+import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 
 class FindLiteralsAndPositions {
 
     public static void main(String[] args) throws Exception {
 
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(
-                        new ShuffleOperation(
-                                new AsciiLiteralGroup(
-                                        "structurals",
-                                        new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                        new AsciiLiteral("punctiations", ":;{}[]".toCharArray()),
-                                        new AsciiLiteral("star", "*".toCharArray()),
-                                        new AsciiLiteral("plus", "+".toCharArray())
-                                ),
-                                new AsciiLiteralGroup(
-                                        "numbers",
-                                        new AsciiLiteral("nums", "0123456789".toCharArray())
-                                )
-                        ))
-                .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+                .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+                .codepoints("star", '*')
+                .codepoints("plus", '+')
+                .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+                .range("comparison", (byte) 0x3c, (byte) 0x3e)
                 .build();
-        var result = EngineBuilder.build(config);
         var findCharsEngine = result.engine();
         var literals = result.literals();
 

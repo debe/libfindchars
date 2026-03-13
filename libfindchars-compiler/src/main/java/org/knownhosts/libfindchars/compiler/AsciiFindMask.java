@@ -2,13 +2,9 @@ package org.knownhosts.libfindchars.compiler;
 
 import java.util.Map;
 
-import org.knownhosts.libfindchars.api.FindMask;
-
 public record AsciiFindMask(byte[] lowNibbleMask, byte[] highNibbleMask,
-                            Map<String, Byte> literals) implements FindMask {
+                            Map<String, Byte> literals) {
 
-
-    @Override
     public byte literalOf(String literal) {
         return literals.get(literal);
     }

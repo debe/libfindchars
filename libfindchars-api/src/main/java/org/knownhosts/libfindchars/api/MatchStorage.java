@@ -2,9 +2,6 @@ package org.knownhosts.libfindchars.api;
 
 import java.util.Arrays;
 
-import com.carrotsearch.hppc.ArraySizingStrategy;
-import com.carrotsearch.hppc.BoundedProportionalArraySizingStrategy;
-
 public final class MatchStorage {
 
     private int[] positions;
@@ -13,13 +10,9 @@ public final class MatchStorage {
 
     private final int reserve;
 
-    private final ArraySizingStrategy resizer;
-
     public MatchStorage(int expectedElements, int reserve) {
         this.positions = new int[expectedElements + reserve];
         this.literals = new byte[expectedElements + reserve];
-        this.resizer = new BoundedProportionalArraySizingStrategy();
-
         this.reserve = reserve;
     }
 
@@ -34,7 +27,7 @@ public final class MatchStorage {
     }
 
     private int grow(int maxSize, int offset, int additions) {
-        final int newSize = resizer.grow(maxSize, offset, additions);
+        final int newSize = Math.max(maxSize * 2, offset + additions);
         this.positions = Arrays.copyOf(positions, newSize);
         this.literals = Arrays.copyOf(literals, newSize);
         return newSize;

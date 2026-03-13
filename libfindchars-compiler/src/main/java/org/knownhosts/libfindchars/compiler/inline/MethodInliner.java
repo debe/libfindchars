@@ -11,13 +11,13 @@ import java.util.Map;
  * Core inlining algorithm: transplants bytecodes from a source method
  * into a target CodeBuilder, remapping slots and labels.
  */
-final class MethodInliner {
+public final class MethodInliner {
 
     private final Map<String, MethodModel> inlineMethods;
     private final Map<String, MethodModel> allMethods;
     private final ClassDesc targetOwner;
 
-    MethodInliner(Map<String, MethodModel> inlineMethods,
+    public MethodInliner(Map<String, MethodModel> inlineMethods,
                   Map<String, MethodModel> allMethods,
                   ClassDesc targetOwner) {
         this.inlineMethods = inlineMethods;
@@ -34,7 +34,7 @@ final class MethodInliner {
      * @param depth     current recursion depth
      * @param maxDepth  maximum recursion depth
      */
-    void inlineMethod(CodeBuilder cb, MethodModel method, int slotBase, int depth, int maxDepth) {
+    public void inlineMethod(CodeBuilder cb, MethodModel method, int slotBase, int depth, int maxDepth) {
         var codeAttr = method.findAttribute(Attributes.code()).orElseThrow(
                 () -> new IllegalStateException("No Code attribute on method: " + method.methodName()));
 

@@ -14,6 +14,11 @@
 		  <artifactId>libfindchars-compiler</artifactId>
 		  <version>${project.version}</version>
 	  </dependency>
+	  <dependency>
+		  <groupId>com.carrotsearch</groupId>
+		  <artifactId>hppc</artifactId>
+		  <version>0.9.1</version>
+	  </dependency>
       <dependency>
           <groupId>org.springframework.boot</groupId>
           <artifactId>spring-boot-starter-web</artifactId>

@@ -9,8 +9,8 @@ libfindchars is a character detection library that can find ASCII and multi-byte
 Use cases are tokenizers, parsers or various pre-processing steps involving fast character detection.
 As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
 
-See the [Benchmark](#benchmark) how fast it is. It typically reaches around **2 GB/s** throughput for ASCII
-and **1.8 GB/s** for UTF-8 on a single core.
+See the [Benchmark](#benchmark) how fast it is. It typically reaches around **2 GB/s** throughput for pure ASCII
+and **1.5 GB/s** for mixed ASCII/UTF-8 on a single core.
 
 Here are some tricks it uses:
  * Vector shuffle mask operation which acts as a lookup table hack.
@@ -20,50 +20,47 @@ Here are some tricks it uses:
    are simply not clever enough to find a solution.
  * UTF-8 multi-byte character detection via per-round shuffle mask solving across continuation bytes.
  * Bytecode-compiled engine with `BytecodeInliner` for zero-overhead inlined SIMD — the engine operations are compiled into a single class, eliminating virtual dispatch entirely.
- * Vector range operation to find character ranges quickly.
+ * Auto-split: when Z3 can't solve all literals in a single shuffle mask (>16 nibble entries), the compiler automatically splits into multiple groups and combines results with OR.
+ * Vector range operation to find character ranges quickly (e.g. `<=>`, `0-9`).
  * Bit hacks to calculate the positions quickly.
  * Auto growing native arrays and memory segments.
- * Sealed-interface runtime engine with bimorphic dispatch for optimal C2 JIT inlining.
 
+## Usage
 
-A typical usage looks like this.
-
-You start by configuring and building your `FindCharsEngine`:
+### ASCII characters with range operations
 
 ```java
-var config = EngineConfiguration.builder()
-        .shuffleOperation(
-                new ShuffleOperation(
-                        new AsciiLiteralGroup(
-                                "structurals",
-                                new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                new AsciiLiteral("punctiations", ":;{}[]".toCharArray()),
-                                new AsciiLiteral("star", "*".toCharArray()),
-                                new AsciiLiteral("plus", "+".toCharArray())
-                        ),
-                        new AsciiLiteralGroup(
-                                "numbers",
-                                new AsciiLiteral("nums", "0123456789".toCharArray())
-                        )
-                ))
-        .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+var result = Utf8EngineBuilder.builder()
+        .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+        .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+        .codepoints("star", '*')
+        .codepoints("plus", '+')
+        .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+        .range("comparison", (byte) 0x3c, (byte) 0x3e)
         .build();
-var result = EngineBuilder.build(config);
 var findCharsEngine = result.engine();
 var literals = result.literals();
 ```
 
-Then use the engine to find characters in memory-mapped files:
+### Multi-byte UTF-8 characters
+
+```java
+var result = Utf8EngineBuilder.builder()
+        .codepoints("whitespace", ' ', '\n')
+        .codepoint("eacute", 0xE9)       // é  2-byte
+        .codepoint("trademark", 0x2122)   // ™  3-byte
+        .codepoint("grin", 0x1F600)       // 😀 4-byte
+        .build();
+var engine = result.engine();
+var literals = result.literals();
+```
+
+### Using the engine
 
 ```java
 byte STAR = literals.get("star");
 byte WHITESPACES = literals.get("whitespaces");
-byte PUNCTIATIONS = literals.get("punctiations");
-byte PLUS = literals.get("plus");
-byte NUMS = literals.get("nums");
 byte COMPARISON = literals.get("comparison");
-
-var fileURI = FindLiteralsAndPositions.class.getClassLoader().getResource("dummy.txt").toURI();
 
 try (Arena arena = Arena.ofConfined();
      var channel = FileChannel.open(Path.of(fileURI), StandardOpenOption.READ)) {
@@ -79,12 +76,6 @@ try (Arena arena = Arena.ofConfined();
             System.out.println("* at: " + pos);
         } else if (lit == WHITESPACES) {
             System.out.println("\\w at: " + pos);
-        } else if (lit == PUNCTIATIONS) {
-            System.out.println("punctuations at: " + pos);
-        } else if (lit == PLUS) {
-            System.out.println("+ at: " + pos);
-        } else if (lit == NUMS) {
-            System.out.println("numbers at: " + pos);
         } else if (lit == COMPARISON) {
             System.out.println("<>= at: " + pos);
         }
@@ -92,21 +83,30 @@ try (Arena arena = Arena.ofConfined();
 }
 ```
 
+## Building
+
+Requires JDK 25 with `--enable-preview` and `--add-modules=jdk.incubator.vector`.
+
+```bash
+mvn clean install
+```
+
 Benchmark
 ---------
 
-JMH benchmark on a 3 MB mixed ASCII/UTF-8 file, detecting 26 distinct characters
-(21 ASCII + 5 multi-byte UTF-8) across 2 shuffle groups and 1 range operation.
+JMH benchmark on a 3 MB mixed ASCII/UTF-8 file. ASCII benchmark detects 26 ASCII characters
+(2 shuffle groups + 1 range operation). UTF-8 benchmark adds 5 multi-byte characters (2-byte and 3-byte).
 Environment: JDK 25, AVX-512, single core.
 
 ![benchmark](./libfindchars-bench/benchmark.png)
 
 | Engine             | Ops/s | Throughput |
 |--------------------|------:|------------|
-| ASCII compiled     |   672 | ~2.0 GB/s  |
-| UTF-8 compiled     |   586 | ~1.8 GB/s  |
-| Regex baseline     |    33 | ~0.1 GB/s  |
+| ASCII compiled     |   665 | ~2.0 GB/s  |
+| UTF-8 compiled     |   497 | ~1.5 GB/s  |
+| UTF-8 C2 JIT       |   139 | ~0.4 GB/s  |
+| Regex baseline     |    26 | ~0.1 GB/s  |
 
 The compiled engines use bytecode-generated SIMD kernels via `BytecodeInliner`,
-eliminating all virtual dispatch overhead. Both ASCII and UTF-8 engines outperform
-compiled regex by roughly **20x**.
+eliminating all virtual dispatch overhead. The compiled engines outperform
+compiled regex by roughly **19-26x**.

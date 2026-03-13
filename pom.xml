@@ -8,6 +8,8 @@
   	<name>libfindchars parent</name>
   	<description>SIMD optimized character detection library</description>
     <packaging>pom</packaging>
+    <properties>
+    </properties>
   	 <licenses>
         <license>
             <name>Apache License, Version 2.0</name>

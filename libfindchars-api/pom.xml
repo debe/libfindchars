@@ -10,11 +10,5 @@
   <name>libfindchars</name>
   <description>SIMD optimized runtime</description>
   <dependencies>
-  	<!-- https://mvnrepository.com/artifact/com.carrotsearch/hppc -->
-	<dependency>
-	    <groupId>com.carrotsearch</groupId>
-	    <artifactId>hppc</artifactId>
-	    <version>0.9.1</version>
-	</dependency>
   </dependencies>
 </project>

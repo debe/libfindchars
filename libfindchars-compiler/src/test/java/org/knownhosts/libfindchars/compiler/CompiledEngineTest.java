@@ -3,10 +3,7 @@ package org.knownhosts.libfindchars.compiler;
 import org.junit.jupiter.api.Test;
 import org.knownhosts.libfindchars.api.FindEngine;
 import org.knownhosts.libfindchars.api.MatchStorage;
-import org.knownhosts.libfindchars.generator.EngineBuilder;
-import org.knownhosts.libfindchars.generator.EngineConfiguration;
-import org.knownhosts.libfindchars.generator.RangeOperation;
-import org.knownhosts.libfindchars.generator.ShuffleOperation;
+import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
@@ -17,23 +14,18 @@ class CompiledEngineTest {
 
     @Test
     void compiledEngineFindsAllMatches() {
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(new ShuffleOperation(
-                        new AsciiLiteralGroup("structurals",
-                                new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                new AsciiLiteral("star", "*".toCharArray()),
-                                new AsciiLiteral("plus", "+".toCharArray()))))
-                .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+                .codepoints("star", '*')
+                .codepoints("plus", '+')
+                .range("comparison", (byte) 0x3c, (byte) 0x3e)
                 .build();
 
-        var result = EngineBuilder.build(config);
         var engine = result.engine();
         var literals = result.literals();
 
         assertNotNull(engine);
         assertInstanceOf(FindEngine.class, engine);
-        assertFalse(engine.getClass().getName().contains("FindCharsEngine"),
-                "Should be a generated class, not FindCharsEngine");
 
         // Test data: "hello world * foo+bar <=> end\n" padded to 64 bytes
         String input = "hello world * foo+bar <=> end\n";
@@ -67,19 +59,15 @@ class CompiledEngineTest {
 
     @Test
     void compiledEngineWithMultipleGroups() {
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(new ShuffleOperation(
-                        new AsciiLiteralGroup("structurals",
-                                new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                new AsciiLiteral("punctiations", ":;{}[]".toCharArray()),
-                                new AsciiLiteral("star", "*".toCharArray()),
-                                new AsciiLiteral("plus", "+".toCharArray())),
-                        new AsciiLiteralGroup("numbers",
-                                new AsciiLiteral("nums", "0123456789".toCharArray()))))
-                .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+                .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+                .codepoints("star", '*')
+                .codepoints("plus", '+')
+                .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+                .range("comparison", (byte) 0x3c, (byte) 0x3e)
                 .build();
 
-        var result = EngineBuilder.build(config);
         var engine = result.engine();
         var literals = result.literals();
 

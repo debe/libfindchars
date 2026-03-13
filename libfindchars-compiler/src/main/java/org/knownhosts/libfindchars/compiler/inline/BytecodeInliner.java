@@ -58,32 +58,46 @@ public final class BytecodeInliner {
         ClassModel inputModel = cf.parse(classBytes);
         var inliner = new MethodInliner(inlineMethods, allMethods, targetOwner);
 
-        return cf.transformClass(inputModel, ClassTransform.transformingMethodBodies(
-                (cb, elem) -> {
-                    if (elem instanceof InvokeInstruction ii
-                            && ii.opcode() == Opcode.INVOKESTATIC
-                            && ii.owner().asSymbol().equals(targetOwner)) {
-                        String key = ii.name().stringValue() + ii.type().stringValue();
-                        var method = inlineMethods.get(key);
-                        if (method != null) {
-                            int maxDepth = getMaxDepth(method);
-                            // Use slot 20 as base — well above the generated find() locals
-                            inliner.inlineMethod(cb, method, 20, 0, maxDepth);
-                            return;
-                        }
-                    }
-                    cb.with(elem);
-                }));
+        // Use method-level transform to access maxLocals for slot base calculation
+        return cf.transformClass(inputModel, (classBuilder, classElement) -> {
+            if (classElement instanceof MethodModel mm) {
+                var codeOpt = mm.findAttribute(Attributes.code());
+                if (codeOpt.isEmpty()) {
+                    classBuilder.with(mm);
+                    return;
+                }
+                // Use method's maxLocals as slot base so we don't overlap with
+                // locals from TemplateTransformer's private method inlining
+                int slotBase = codeOpt.get().maxLocals();
+                classBuilder.transformMethod(mm, MethodTransform.transformingCode(
+                        (cb, elem) -> {
+                            if (elem instanceof InvokeInstruction ii
+                                    && ii.opcode() == Opcode.INVOKESTATIC
+                                    && ii.owner().asSymbol().equals(targetOwner)) {
+                                String key = ii.name().stringValue() + ii.type().stringValue();
+                                var method = inlineMethods.get(key);
+                                if (method != null) {
+                                    int maxDepth = getMaxDepth(method);
+                                    inliner.inlineMethod(cb, method, slotBase, 0, maxDepth);
+                                    return;
+                                }
+                            }
+                            cb.with(elem);
+                        }));
+            } else {
+                classBuilder.with(classElement);
+            }
+        });
     }
 
-    private static boolean hasInlineAnnotation(MethodModel method) {
+    static boolean hasInlineAnnotation(MethodModel method) {
         return method.findAttribute(Attributes.runtimeVisibleAnnotations())
                 .map(ann -> ann.annotations().stream()
                         .anyMatch(a -> a.classSymbol().descriptorString().equals(INLINE_DESCRIPTOR)))
                 .orElse(false);
     }
 
-    private static int getMaxDepth(MethodModel method) {
+    static int getMaxDepth(MethodModel method) {
         return method.findAttribute(Attributes.runtimeVisibleAnnotations())
                 .flatMap(ann -> ann.annotations().stream()
                         .filter(a -> a.classSymbol().descriptorString().equals(INLINE_DESCRIPTOR))
@@ -100,7 +114,7 @@ public final class BytecodeInliner {
                 .orElse(4);
     }
 
-    private static byte[] readClassBytes(Class<?> clazz) {
+    public static byte[] readClassBytes(Class<?> clazz) {
         String resourceName = "/" + clazz.getName().replace('.', '/') + ".class";
         try (var is = clazz.getResourceAsStream(resourceName)) {
             if (is == null) {

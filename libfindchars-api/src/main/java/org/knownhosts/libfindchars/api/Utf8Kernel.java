@@ -2,6 +2,8 @@ package org.knownhosts.libfindchars.api;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
+
 
 /**
  * Static helper methods containing the actual SIMD logic for UTF-8 engines.
@@ -17,15 +19,25 @@ public final class Utf8Kernel {
 
     private Utf8Kernel() {}
 
-    // --- Private helpers (recursively inlined) ---
+    // --- Core shuffle/cleanLit primitives (public for template use) ---
 
-    private static ByteVector shuffle(ByteVector input, ByteVector lowLUT, ByteVector highLUT, ByteVector lowMask) {
-        var lo = lowLUT.rearrange(input.and(lowMask).toShuffle());
-        var hi = highLUT.rearrange(input.lanewise(VectorOperators.LSHR, 4).and(lowMask).toShuffle());
+    /**
+     * Apply low/high nibble shuffle mask lookup to produce the raw match vector.
+     * This is the common first step of every group application.
+     */
+    @Inline
+    public static ByteVector shuffle(ByteVector input, ByteVector lowLUT, ByteVector highLUT, ByteVector lowMask) {
+        var lo = input.and(lowMask).selectFrom(lowLUT);
+        var hi = input.lanewise(VectorOperators.LSHR, 4).and(lowMask).selectFrom(highLUT);
         return lo.and(hi);
     }
 
-    private static ByteVector cleanLit(ByteVector raw, ByteVector cleaned, ByteVector litVec) {
+    /**
+     * Compare raw against a literal vector and accumulate matches.
+     * Called once per literal in a group.
+     */
+    @Inline
+    public static ByteVector cleanLit(ByteVector raw, ByteVector cleaned, ByteVector litVec) {
         return cleaned.add(raw, raw.compare(VectorOperators.EQ, litVec));
     }
 
@@ -40,108 +52,16 @@ public final class Utf8Kernel {
         return chunk.compare(VectorOperators.LT, 0).anyTrue();
     }
 
-    public static boolean hasMultiByte(ByteVector classify) {
-        return classify.compare(VectorOperators.GE, 2).anyTrue();
-    }
-
     @Inline
     public static ByteVector classify(ByteVector chunk, ByteVector classifyVec, ByteVector lowMask) {
-        return classifyVec.rearrange(chunk.lanewise(VectorOperators.LSHR, 4).and(lowMask).toShuffle());
+        return chunk.lanewise(VectorOperators.LSHR, 4).and(lowMask).selectFrom(classifyVec);
     }
 
-    // --- Round mask application (unrolled by literal count) ---
+    // --- Combine results from multiple shuffle groups ---
 
     @Inline
-    public static ByteVector applyRoundMask1(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero, ByteVector lit0) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        return cleanLit(raw, zero, lit0);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask2(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero, ByteVector lit0, ByteVector lit1) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        return cleanLit(raw, cleaned, lit1);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask3(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero, ByteVector lit0, ByteVector lit1, ByteVector lit2) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        cleaned = cleanLit(raw, cleaned, lit1);
-        return cleanLit(raw, cleaned, lit2);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask4(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero,
-            ByteVector lit0, ByteVector lit1, ByteVector lit2, ByteVector lit3) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        cleaned = cleanLit(raw, cleaned, lit1);
-        cleaned = cleanLit(raw, cleaned, lit2);
-        return cleanLit(raw, cleaned, lit3);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask5(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero,
-            ByteVector lit0, ByteVector lit1, ByteVector lit2, ByteVector lit3,
-            ByteVector lit4) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        cleaned = cleanLit(raw, cleaned, lit1);
-        cleaned = cleanLit(raw, cleaned, lit2);
-        cleaned = cleanLit(raw, cleaned, lit3);
-        return cleanLit(raw, cleaned, lit4);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask6(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero,
-            ByteVector lit0, ByteVector lit1, ByteVector lit2, ByteVector lit3,
-            ByteVector lit4, ByteVector lit5) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        cleaned = cleanLit(raw, cleaned, lit1);
-        cleaned = cleanLit(raw, cleaned, lit2);
-        cleaned = cleanLit(raw, cleaned, lit3);
-        cleaned = cleanLit(raw, cleaned, lit4);
-        return cleanLit(raw, cleaned, lit5);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask7(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero,
-            ByteVector lit0, ByteVector lit1, ByteVector lit2, ByteVector lit3,
-            ByteVector lit4, ByteVector lit5, ByteVector lit6) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        cleaned = cleanLit(raw, cleaned, lit1);
-        cleaned = cleanLit(raw, cleaned, lit2);
-        cleaned = cleanLit(raw, cleaned, lit3);
-        cleaned = cleanLit(raw, cleaned, lit4);
-        cleaned = cleanLit(raw, cleaned, lit5);
-        return cleanLit(raw, cleaned, lit6);
-    }
-
-    @Inline
-    public static ByteVector applyRoundMask8(ByteVector input, ByteVector lowLUT, ByteVector highLUT,
-            ByteVector lowMask, ByteVector zero,
-            ByteVector lit0, ByteVector lit1, ByteVector lit2, ByteVector lit3,
-            ByteVector lit4, ByteVector lit5, ByteVector lit6, ByteVector lit7) {
-        var raw = shuffle(input, lowLUT, highLUT, lowMask);
-        var cleaned = cleanLit(raw, zero, lit0);
-        cleaned = cleanLit(raw, cleaned, lit1);
-        cleaned = cleanLit(raw, cleaned, lit2);
-        cleaned = cleanLit(raw, cleaned, lit3);
-        cleaned = cleanLit(raw, cleaned, lit4);
-        cleaned = cleanLit(raw, cleaned, lit5);
-        cleaned = cleanLit(raw, cleaned, lit6);
-        return cleanLit(raw, cleaned, lit7);
+    public static ByteVector combineRounds(ByteVector a, ByteVector b) {
+        return a.or(b);
     }
 
     // --- ASCII gate ---
@@ -193,5 +113,36 @@ public final class Utf8Kernel {
         gate = gate.and(r2.compare(VectorOperators.EQ, rl2));
         gate = gate.and(r3.compare(VectorOperators.EQ, rl3));
         return accumulator.add(finalLit, gate);
+    }
+
+    // --- Range matching ---
+
+    @Inline
+    public static ByteVector rangeMatch(ByteVector inputVec, ByteVector accumulator,
+            ByteVector lower, ByteVector upper, ByteVector literal) {
+        var inRange = inputVec.compare(VectorOperators.GE, lower)
+                .and(inputVec.compare(VectorOperators.LE, upper));
+        return accumulator.add(literal, inRange);
+    }
+
+    // --- Decode ---
+
+    @Inline
+    public static int decode(MatchStorage matchStorage, ByteVector accumulator,
+            int globalCount, int fileOffset) {
+        var findMask = accumulator.compare(VectorOperators.NE, 0);
+        var bits = findMask.toLong();
+        var count = findMask.trueCount();
+
+        if (count != 0) {
+            accumulator.compress(findMask).intoArray(matchStorage.getLiteralBuffer(), globalCount);
+            var posBuf = matchStorage.getPositionsBuffer();
+            int offset = globalCount;
+            while (bits != 0) {
+                posBuf[offset++] = Long.numberOfTrailingZeros(bits) + fileOffset;
+                bits &= (bits - 1);
+            }
+        }
+        return globalCount + count;
     }
 }

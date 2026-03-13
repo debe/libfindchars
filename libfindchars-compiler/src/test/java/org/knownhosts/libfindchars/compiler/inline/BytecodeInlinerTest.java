@@ -1,17 +1,12 @@
 package org.knownhosts.libfindchars.compiler.inline;
 
 import org.junit.jupiter.api.Test;
-import org.knownhosts.libfindchars.api.EngineKernel;
+import org.knownhosts.libfindchars.compiler.inline.BytecodeInliner;
+import org.knownhosts.libfindchars.api.Utf8Kernel;
 import org.knownhosts.libfindchars.api.MatchStorage;
-import org.knownhosts.libfindchars.compiler.AsciiLiteral;
-import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
-import org.knownhosts.libfindchars.generator.EngineBuilder;
-import org.knownhosts.libfindchars.generator.EngineConfiguration;
-import org.knownhosts.libfindchars.generator.RangeOperation;
-import org.knownhosts.libfindchars.generator.ShuffleOperation;
+import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 
 import java.lang.classfile.ClassFile;
-import java.lang.classfile.instruction.InvokeInstruction;
 import java.lang.foreign.MemorySegment;
 import java.lang.constant.ClassDesc;
 import java.nio.charset.StandardCharsets;
@@ -21,30 +16,24 @@ import static org.junit.jupiter.api.Assertions.*;
 class BytecodeInlinerTest {
 
     @Test
-    void inlinerRemovesInvokestaticToEngineKernel() {
-        // Build a real engine — this triggers EngineCodeGen + BytecodeInliner
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(new ShuffleOperation(
-                        new AsciiLiteralGroup("test",
-                                new AsciiLiteral("spaces", " ".toCharArray()))))
+    void inlinerRemovesInvokestaticToUtf8Kernel() {
+        // Build a real engine via the full specialization pipeline
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("spaces", ' ')
                 .build();
 
-        var result = EngineBuilder.build(config);
         assertNotNull(result.engine());
     }
 
     @Test
     void inlinedEngineProducesCorrectResults() {
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(new ShuffleOperation(
-                        new AsciiLiteralGroup("structurals",
-                                new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                new AsciiLiteral("star", "*".toCharArray()),
-                                new AsciiLiteral("plus", "+".toCharArray()))))
-                .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+                .codepoints("star", '*')
+                .codepoints("plus", '+')
+                .range("comparison", (byte) 0x3c, (byte) 0x3e)
                 .build();
 
-        var result = EngineBuilder.build(config);
         var engine = result.engine();
         var literals = result.literals();
 
@@ -78,19 +67,15 @@ class BytecodeInlinerTest {
 
     @Test
     void inlinedEngineWithMultipleGroups() {
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(new ShuffleOperation(
-                        new AsciiLiteralGroup("structurals",
-                                new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                new AsciiLiteral("punctuations", ":;{}[]".toCharArray()),
-                                new AsciiLiteral("star", "*".toCharArray()),
-                                new AsciiLiteral("plus", "+".toCharArray())),
-                        new AsciiLiteralGroup("numbers",
-                                new AsciiLiteral("nums", "0123456789".toCharArray()))))
-                .rangeOperations(new RangeOperation("comparison", 0x3c, 0x3e))
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+                .codepoints("punctuations", ':', ';', '{', '}', '[', ']')
+                .codepoints("star", '*')
+                .codepoints("plus", '+')
+                .codepoints("nums", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+                .range("comparison", (byte) 0x3c, (byte) 0x3e)
                 .build();
 
-        var result = EngineBuilder.build(config);
         var engine = result.engine();
         var literals = result.literals();
 
@@ -122,9 +107,7 @@ class BytecodeInlinerTest {
         });
 
         // Inlining against a class with no @Inline methods should be a no-op
-        // (EngineKernel has @Inline, but Dummy doesn't call it)
-        byte[] result = BytecodeInliner.inline(original, EngineKernel.class);
-        // Should still be valid class bytes (may differ in constant pool layout)
+        byte[] result = BytecodeInliner.inline(original, Utf8Kernel.class);
         assertNotNull(result);
     }
 }

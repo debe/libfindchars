@@ -283,4 +283,249 @@ class Utf8EngineTest {
             Assertions.assertNotEquals((byte) 0, b, "Literal bytes must be non-zero");
         }
     }
+
+    // --- Shared lead-byte / multi-byte edge case tests ---
+
+    @Test
+    void sharedLeadByteTwoByteChars() {
+        // é = U+00E9 = [C3, A9], ô = U+00F4 = [C3, B4] — both share lead byte 0xC3
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("eacute", 0xE9)
+                .codepoint("ocirc", 0xF4)
+                .build();
+
+        byte eLit = result.literals().get("eacute");
+        byte oLit = result.literals().get("ocirc");
+        Assertions.assertNotEquals(eLit, oLit, "é and ô must have distinct literal bytes");
+
+        byte[] buf = new byte[bufSize()];
+        // é at position 4
+        buf[4] = (byte) 0xC3; buf[5] = (byte) 0xA9;
+        // ô at position 10
+        buf[10] = (byte) 0xC3; buf[11] = (byte) 0xB4;
+        // Another é at position 20
+        buf[20] = (byte) 0xC3; buf[21] = (byte) 0xA9;
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        var literals = new ArrayList<Byte>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+            literals.add(view.getLiteralAt(matchStorage, i));
+        }
+
+        Assertions.assertEquals(3, view.size(), "Should find all 3 matches");
+        Assertions.assertTrue(positions.contains(4), "é at 4");
+        Assertions.assertTrue(positions.contains(10), "ô at 10");
+        Assertions.assertTrue(positions.contains(20), "é at 20");
+
+        // Verify correct literal assignment
+        Assertions.assertEquals(eLit, literals.get(positions.indexOf(4)), "é literal at 4");
+        Assertions.assertEquals(oLit, literals.get(positions.indexOf(10)), "ô literal at 10");
+        Assertions.assertEquals(eLit, literals.get(positions.indexOf(20)), "é literal at 20");
+    }
+
+    @Test
+    void multipleSharedLeadByte2ByteChars() {
+        // é [C3,A9], ô [C3,B4], ü [C3,BC] — three chars sharing 0xC3 lead
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("eacute", 0xE9)
+                .codepoint("ocirc", 0xF4)
+                .codepoint("uuml", 0xFC)
+                .build();
+
+        byte eLit = result.literals().get("eacute");
+        byte oLit = result.literals().get("ocirc");
+        byte uLit = result.literals().get("uuml");
+        var litSet = new HashSet<>(java.util.List.of(eLit, oLit, uLit));
+        Assertions.assertEquals(3, litSet.size(), "All three literal bytes must be distinct");
+
+        byte[] buf = new byte[bufSize()];
+        buf[2] = (byte) 0xC3; buf[3] = (byte) 0xA9;   // é
+        buf[8] = (byte) 0xC3; buf[9] = (byte) 0xB4;   // ô
+        buf[14] = (byte) 0xC3; buf[15] = (byte) 0xBC;  // ü
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+        }
+
+        Assertions.assertEquals(3, view.size(), "Should find all 3 chars");
+        Assertions.assertTrue(positions.contains(2), "é at 2");
+        Assertions.assertTrue(positions.contains(8), "ô at 8");
+        Assertions.assertTrue(positions.contains(14), "ü at 14");
+    }
+
+    @Test
+    void sharedLeadByte3ByteChars() {
+        // ™ = U+2122 = [E2, 84, A2], ← = U+2190 = [E2, 86, 90] — shared 0xE2 lead
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("tm", 0x2122)
+                .codepoint("leftarrow", 0x2190)
+                .build();
+
+        byte tmLit = result.literals().get("tm");
+        byte laLit = result.literals().get("leftarrow");
+        Assertions.assertNotEquals(tmLit, laLit, "™ and ← must have distinct literal bytes");
+
+        byte[] buf = new byte[bufSize()];
+        // ™ at position 5
+        buf[5] = (byte) 0xE2; buf[6] = (byte) 0x84; buf[7] = (byte) 0xA2;
+        // ← at position 15
+        buf[15] = (byte) 0xE2; buf[16] = (byte) 0x86; buf[17] = (byte) 0x90;
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+        }
+
+        Assertions.assertEquals(2, view.size(), "Should find both 3-byte chars");
+        Assertions.assertTrue(positions.contains(5), "™ at 5");
+        Assertions.assertTrue(positions.contains(15), "← at 15");
+    }
+
+    @Test
+    void mixedAsciiAndSharedLeadByteMultiByte() {
+        // ASCII whitespace + punctuation + é + ô + range
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoints("whitespace", '\t', '\n', ' ')
+                .codepoints("punct", ',', '.', ';')
+                .codepoint("eacute", 0xE9)
+                .codepoint("ocirc", 0xF4)
+                .range("digits", (byte) '0', (byte) '9')
+                .build();
+
+        byte wsLit = result.literals().get("whitespace");
+        byte pLit = result.literals().get("punct");
+        byte eLit = result.literals().get("eacute");
+        byte oLit = result.literals().get("ocirc");
+        byte dLit = result.literals().get("digits");
+
+        byte[] buf = new byte[bufSize()];
+        buf[0] = '\t';
+        buf[3] = ',';
+        buf[6] = '5';
+        buf[10] = (byte) 0xC3; buf[11] = (byte) 0xA9;  // é
+        buf[16] = (byte) 0xC3; buf[17] = (byte) 0xB4;  // ô
+        buf[22] = ' ';
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        var lits = new ArrayList<Byte>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+            lits.add(view.getLiteralAt(matchStorage, i));
+        }
+
+        Assertions.assertEquals(6, view.size(), "Should find 6 matches");
+        Assertions.assertTrue(positions.contains(0), "\\t at 0");
+        Assertions.assertTrue(positions.contains(3), ", at 3");
+        Assertions.assertTrue(positions.contains(6), "5 at 6");
+        Assertions.assertTrue(positions.contains(10), "é at 10");
+        Assertions.assertTrue(positions.contains(16), "ô at 16");
+        Assertions.assertTrue(positions.contains(22), "' ' at 22");
+    }
+
+    @Test
+    void adjacentMultiByteChars() {
+        // Two é back-to-back: [C3,A9,C3,A9]
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("eacute", 0xE9)
+                .build();
+
+        byte eLit = result.literals().get("eacute");
+
+        byte[] buf = new byte[bufSize()];
+        buf[10] = (byte) 0xC3; buf[11] = (byte) 0xA9;
+        buf[12] = (byte) 0xC3; buf[13] = (byte) 0xA9;
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+            Assertions.assertEquals(eLit, view.getLiteralAt(matchStorage, i));
+        }
+
+        Assertions.assertEquals(2, view.size(), "Should find both adjacent é");
+        Assertions.assertTrue(positions.contains(10), "First é at 10");
+        Assertions.assertTrue(positions.contains(12), "Second é at 12");
+    }
+
+    @Test
+    void multiByteAtBufferEnd() {
+        // 2-byte char at the very last 2 bytes of the buffer (tail processing path)
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("eacute", 0xE9)
+                .build();
+
+        byte eLit = result.literals().get("eacute");
+        int bufLen = VECTOR_SIZE * 2 + 2; // just past a vector boundary + 2 tail bytes
+        byte[] buf = new byte[bufLen];
+        buf[bufLen - 2] = (byte) 0xC3;
+        buf[bufLen - 1] = (byte) 0xA9;
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+        }
+
+        Assertions.assertTrue(positions.contains(bufLen - 2),
+                "Should find é at buffer tail position " + (bufLen - 2));
+    }
+
+    @Test
+    void allMultiByteNoAscii() {
+        // Only multi-byte codepoints, no ASCII targets
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("eacute", 0xE9)   // [C3, A9]
+                .codepoint("ocirc", 0xF4)     // [C3, B4]
+                .codepoint("tm", 0x2122)      // [E2, 84, A2]
+                .build();
+
+        byte eLit = result.literals().get("eacute");
+        byte oLit = result.literals().get("ocirc");
+        byte tmLit = result.literals().get("tm");
+
+        byte[] buf = new byte[bufSize()];
+        buf[2] = (byte) 0xC3; buf[3] = (byte) 0xA9;   // é
+        buf[8] = (byte) 0xC3; buf[9] = (byte) 0xB4;   // ô
+        buf[14] = (byte) 0xE2; buf[15] = (byte) 0x84; buf[16] = (byte) 0xA2; // ™
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        var lits = new ArrayList<Byte>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add(view.getPositionAt(matchStorage, i));
+            lits.add(view.getLiteralAt(matchStorage, i));
+        }
+
+        Assertions.assertEquals(3, view.size(), "Should find all 3 multi-byte chars");
+        Assertions.assertTrue(positions.contains(2), "é at 2");
+        Assertions.assertTrue(positions.contains(8), "ô at 8");
+        Assertions.assertTrue(positions.contains(14), "™ at 14");
+    }
 }

@@ -10,7 +10,7 @@
   <name>libfindchars-compiler</name>
   <description>libfindchars compiler that compiles character set into bitmasks</description>
   <dependencies>
-	<dependency> 
+	<dependency>
 	  <groupId>org.knownhosts</groupId>
 	  <artifactId>libfindchars-api</artifactId>
       <version>${project.version}</version>

@@ -2,11 +2,7 @@ package org.knownhosts.libfindchars.bench;
 
 import org.knownhosts.libfindchars.api.FindEngine;
 import org.knownhosts.libfindchars.api.MatchStorage;
-import org.knownhosts.libfindchars.compiler.AsciiLiteral;
-import org.knownhosts.libfindchars.compiler.AsciiLiteralGroup;
-import org.knownhosts.libfindchars.generator.EngineBuilder;
-import org.knownhosts.libfindchars.generator.EngineConfiguration;
-import org.knownhosts.libfindchars.generator.ShuffleOperation;
+import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,19 +38,12 @@ public class BenchController {
             throw new RuntimeException(e);
         }
 
-        var config = EngineConfiguration.builder()
-                .shuffleOperation(
-                        new ShuffleOperation(
-                                new AsciiLiteralGroup(
-                                        "structurals",
-                                        new AsciiLiteral("whitespaces", "\r\n\t\f ".toCharArray()),
-                                        new AsciiLiteral("punctiations", ":;{}[]".toCharArray()),
-                                        new AsciiLiteral("star", "*".toCharArray()),
-                                        new AsciiLiteral("plus", "+".toCharArray())
-                                )
-                        ))
+        var result = Utf8EngineBuilder.builder()
+                .codepoints("whitespaces", '\r', '\n', '\t', '\f', ' ')
+                .codepoints("punctiations", ':', ';', '{', '}', '[', ']')
+                .codepoints("star", '*')
+                .codepoints("plus", '+')
                 .build();
-        var result = EngineBuilder.build(config);
         this.findCharsEngine = result.engine();
         var literals = result.literals();
         STAR = literals.get("star");
