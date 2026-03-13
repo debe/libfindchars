@@ -126,6 +126,7 @@ Benchmark
 
 JMH benchmark on a 3 MB mixed ASCII/UTF-8 file. ASCII benchmark detects 26 ASCII characters
 (2 shuffle groups + 1 range operation). UTF-8 benchmark adds 5 multi-byte characters (2-byte and 3-byte).
+C2 JIT uses `Utf8EngineTemplate` directly without bytecode specialization.
 Environment: JDK 25, AVX-512, single core.
 
 ![benchmark](./libfindchars-bench/benchmark.png)
@@ -134,8 +135,11 @@ Environment: JDK 25, AVX-512, single core.
 |--------------------|------:|------------|
 | ASCII compiled     |   672 | ~2.0 GB/s  |
 | UTF-8 compiled     |   586 | ~1.8 GB/s  |
+| UTF-8 C2 JIT      |   436 | ~1.3 GB/s  |
 | Regex baseline     |    33 | ~0.1 GB/s  |
 
 The compiled engines use bytecode-generated SIMD kernels via `BytecodeInliner`,
-eliminating all virtual dispatch overhead. The compiled engines outperform
-compiled regex by roughly **18-20x**.
+eliminating all virtual dispatch overhead. The C2 JIT engine uses `Utf8EngineTemplate`
+directly without bytecode specialization — still fast, but ~25% slower than the compiled
+path due to virtual dispatch and unspecialized loops. All SIMD engines outperform
+compiled regex by roughly **13-20x**.
