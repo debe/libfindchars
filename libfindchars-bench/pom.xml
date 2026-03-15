@@ -20,6 +20,12 @@
 		  <version>${project.version}</version>
 	  </dependency>
 	  <dependency>
+		  <groupId>org.junit.jupiter</groupId>
+		  <artifactId>junit-jupiter-params</artifactId>
+		  <version>5.10.1</version>
+		  <scope>test</scope>
+	  </dependency>
+	  <dependency>
 		  <groupId>com.carrotsearch</groupId>
 		  <artifactId>hppc</artifactId>
 		  <version>0.9.1</version>
