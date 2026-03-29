@@ -3,6 +3,7 @@ package org.knownhosts.libfindchars.api;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
@@ -10,7 +11,10 @@ import jdk.incubator.vector.VectorSpecies;
 
 
 /**
- * Readable template for the UTF-8 SIMD engine. This class serves two purposes:
+ * Readable template for the UTF-8 SIMD engine. <b>Not thread-safe</b> — mutable
+ * {@code decodeTmp} and {@code filterState} fields are reused across calls.
+ *
+ * <p>This class serves two purposes:
  * <ol>
  *   <li><b>C2 JIT fallback</b>: works as-is with array fields, loops, and switches.
  *       Slower than the compiled path but correct.</li>
@@ -55,6 +59,16 @@ public class Utf8EngineTemplate implements FindEngine {
     private final int[] flatGroupLitCounts;
     private final int[] charSpecByteLengths;
 
+    // Chunk filter (VPA extension point)
+    @Inline private final int filterEnabled;
+    private final ByteVector[] filterLiterals;
+    private final long[] filterState;
+    private final byte[] filterScratchpad;
+
+    // Platform-adaptive decode
+    @Inline private final int useCompress;
+    private final byte[] decodeTmp;
+    private final byte[] tailPad;
 
     // Species for vector operations
     private final VectorSpecies<Byte> species;
@@ -76,7 +90,10 @@ public class Utf8EngineTemplate implements FindEngine {
             ByteVector[] charSpecFinalLitVecs,
             ByteVector[] rangeLower,
             ByteVector[] rangeUpper,
-            ByteVector[] rangeLit) {
+            ByteVector[] rangeLit,
+            int filterEnabled,
+            ByteVector[] filterLiterals,
+            int useCompress) {
 
         this.species = species;
         this.zero = zero;
@@ -102,21 +119,37 @@ public class Utf8EngineTemplate implements FindEngine {
         this.totalGroups = lowLUTs.length;
 
         this.vectorByteSize = species.vectorByteSize();
+
+        // Chunk filter
+        this.filterEnabled = filterEnabled;
+        this.filterLiterals = filterLiterals;
+        this.filterState = new long[8];
+        this.filterScratchpad = new byte[species.vectorByteSize()];
+
+        // Platform-adaptive decode
+        this.useCompress = useCompress;
+        this.decodeTmp = new byte[species.vectorByteSize()];
+        this.tailPad = new byte[species.vectorByteSize()];
     }
 
     @Override
     public MatchView find(MemorySegment data, MatchStorage matchStorage) {
-        int dataSize = (int) data.byteSize();
+        long dataSize = data.byteSize();
 
-        if (vectorByteSize > dataSize) {
+        if (dataSize == 0) {
             return new MatchView(0);
         }
 
-        // Pre-allocate storage for worst case
-        matchStorage.ensureSize(dataSize, 0);
+        // Pre-allocate storage for worst case (match count bounded by int array size)
+        matchStorage.ensureSize((int) Math.min(dataSize, Integer.MAX_VALUE), 0);
+
+        // Reset filter carry state for each find() call
+        if (filterEnabled != 0) {
+            Arrays.fill(filterState, 0);
+        }
 
         int globalCount = 0;
-        int i = 0;
+        long i = 0;
 
         // Extract buffers once to avoid repeated getter calls in processMainBody
         var litBuf = matchStorage.getLiteralBuffer();
@@ -130,10 +163,10 @@ public class Utf8EngineTemplate implements FindEngine {
 
         // Tail: process remaining bytes
         if (i < dataSize) {
-            int remaining = dataSize - i;
-            byte[] lastPad = new byte[vectorByteSize];
-            MemorySegment.copy(data, ValueLayout.JAVA_BYTE, i, lastPad, 0, remaining);
-            var chunk = ByteVector.fromArray(species, lastPad, 0);
+            int remaining = (int) (dataSize - i);
+            Arrays.fill(tailPad, (byte) 0);
+            MemorySegment.copy(data, ValueLayout.JAVA_BYTE, i, tailPad, 0, remaining);
+            var chunk = ByteVector.fromArray(species, tailPad, 0);
 
             if (maxRounds > 1 && Utf8Kernel.hasNonAscii(chunk)) {
                 byte[] padded = new byte[vectorByteSize + maxRounds - 1];
@@ -147,9 +180,9 @@ public class Utf8EngineTemplate implements FindEngine {
         return new MatchView(globalCount);
     }
 
-    // Per-chunk processing: load chunk + SIMD detection + inline decode.
-    private int processMainBody(MemorySegment data, byte[] litBuf, int[] posBuf,
-                                int i, int globalCount) {
+    // Per-chunk processing: load chunk + SIMD detection + optional filter + decode.
+    private int processMainBody(MemorySegment data, byte[] litBuf, long[] posBuf,
+                                long i, int globalCount) {
         var chunk = ByteVector.fromMemorySegment(species, data, i, ByteOrder.nativeOrder());
 
         // --- SIMD detection ---
@@ -181,19 +214,13 @@ public class Utf8EngineTemplate implements FindEngine {
                     rangeLower[r], rangeUpper[r], rangeLit[r]);
         }
 
-        // --- Decode ---
-        var findMask = accumulator.compare(VectorOperators.NE, 0);
-        var bits = findMask.toLong();
-        var count = findMask.trueCount();
-        if (count != 0) {
-            accumulator.compress(findMask).intoArray(litBuf, globalCount);
-            int offset = globalCount;
-            while (bits != 0) {
-                posBuf[offset++] = Long.numberOfTrailingZeros(bits) + i;
-                bits &= (bits - 1);
-            }
+        // --- Chunk filter (VPA extension point) ---
+        if (filterEnabled != 0) {
+            accumulator = NoOpChunkFilter.apply(accumulator, zero, species,
+                    filterState, filterScratchpad, filterLiterals);
         }
-        return globalCount + count;
+
+        return decodeMatches(accumulator, litBuf, posBuf, globalCount, i);
     }
 
     @Override
@@ -203,7 +230,7 @@ public class Utf8EngineTemplate implements FindEngine {
 
     // Single chunk processing without MemorySegment (for tail)
     private int processSingleChunk(MatchStorage matchStorage,
-                                   ByteVector chunk, int i, int globalCount) {
+                                   ByteVector chunk, long i, int globalCount) {
         var accumulator = zero;
         var r0 = applyRound(chunk, 0);
         accumulator = Utf8Kernel.gateAsciiOnly(accumulator, r0);
@@ -213,24 +240,19 @@ public class Utf8EngineTemplate implements FindEngine {
                     rangeLower[r], rangeUpper[r], rangeLit[r]);
         }
 
-        var findMask = accumulator.compare(VectorOperators.NE, 0);
-        var bits = findMask.toLong();
-        var count = findMask.trueCount();
-        if (count != 0) {
-            accumulator.compress(findMask).intoArray(matchStorage.getLiteralBuffer(), globalCount);
-            var posBuf = matchStorage.getPositionsBuffer();
-            int offset = globalCount;
-            while (bits != 0) {
-                posBuf[offset++] = Long.numberOfTrailingZeros(bits) + i;
-                bits &= (bits - 1);
-            }
+        // --- Chunk filter (VPA extension point) ---
+        if (filterEnabled != 0) {
+            accumulator = NoOpChunkFilter.apply(accumulator, zero, species,
+                    filterState, filterScratchpad, filterLiterals);
         }
-        return globalCount + count;
+
+        return decodeMatches(accumulator, matchStorage.getLiteralBuffer(),
+                matchStorage.getPositionsBuffer(), globalCount, i);
     }
 
     private int processTailBody(MatchStorage matchStorage,
                                 ByteVector chunk, byte[] padded,
-                                int fileOffset, int globalCount) {
+                                long fileOffset, int globalCount) {
         var accumulator = zero;
         var r0 = applyRound(chunk, 0);
 
@@ -253,7 +275,52 @@ public class Utf8EngineTemplate implements FindEngine {
                     rangeLower[r], rangeUpper[r], rangeLit[r]);
         }
 
-        return Utf8Kernel.decode(matchStorage, accumulator, globalCount, fileOffset);
+        // --- Chunk filter (VPA extension point) ---
+        if (filterEnabled != 0) {
+            accumulator = NoOpChunkFilter.apply(accumulator, zero, species,
+                    filterState, filterScratchpad, filterLiterals);
+        }
+
+        return decodeMatches(accumulator, matchStorage.getLiteralBuffer(),
+                matchStorage.getPositionsBuffer(), globalCount, fileOffset);
+    }
+
+    /**
+     * Platform-adaptive decode: extract match positions and literal bytes.
+     * anyTrue() maps to a single NEON UMAXV — fast reject for no-match chunks.
+     * toLong() requires multiple NEON→GPR transfers, only called when needed.
+     */
+    @Inline
+    private int decodeMatches(ByteVector accumulator, byte[] litBuf, long[] posBuf,
+                              int globalCount, long baseOffset) {
+        var findMask = accumulator.compare(VectorOperators.NE, 0);
+        if (findMask.anyTrue()) {
+            var bits = findMask.toLong();
+            if (useCompress != 0) {
+                // AVX-512: VPCOMPRESSB intrinsic — single instruction
+                var count = findMask.trueCount();
+                accumulator.compress(findMask).intoArray(litBuf, globalCount);
+                int offset = globalCount;
+                while (bits != 0) {
+                    posBuf[offset++] = Long.numberOfTrailingZeros(bits) + baseOffset;
+                    bits &= (bits - 1);
+                }
+                return globalCount + count;
+            } else {
+                // ARM/AVX2: intoArray + scatter (avoids compress lambda fallback)
+                accumulator.intoArray(decodeTmp, 0);
+                int offset = globalCount;
+                while (bits != 0) {
+                    int lane = Long.numberOfTrailingZeros(bits);
+                    litBuf[offset] = decodeTmp[lane];
+                    posBuf[offset] = lane + baseOffset;
+                    offset++;
+                    bits &= (bits - 1);
+                }
+                return offset;
+            }
+        }
+        return globalCount;
     }
 
     @Inline
@@ -270,10 +337,6 @@ public class Utf8EngineTemplate implements FindEngine {
     @Inline
     private ByteVector applyGroup(ByteVector input, int groupIdx) {
         var raw = Utf8Kernel.shuffle(input, lowLUTs[groupIdx], highLUTs[groupIdx], lowMask);
-        // Single vpermb lookup replaces N cleanLit calls: cleanLUT maps literal byte
-        // values to themselves and all other values to zero. vpermb uses lower 6 bits
-        // of each lane as the index, so Z3 constrains literal bytes < 64 and ensures
-        // non-target AND results don't collide mod 64 with any literal byte.
         return raw.selectFrom(cleanLUTs[groupIdx]);
     }
 

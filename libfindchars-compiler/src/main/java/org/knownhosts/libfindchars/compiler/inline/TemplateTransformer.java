@@ -131,40 +131,50 @@ public final class TemplateTransformer {
         var codeAttr = method.findAttribute(Attributes.code()).orElseThrow();
         var desc = method.methodTypeSymbol();
 
-        // For instance methods, the invoke instruction has pushed: this, arg1, arg2, ...
-        // Store them in reverse order into remapped slots
-        int paramCount = desc.parameterCount();
+        storeInstanceParams(cb, desc, slotBase);
 
-        // Store explicit parameters (reverse order)
-        for (int p = paramCount - 1; p >= 0; p--) {
-            var paramType = desc.parameterType(p);
-            var tk = TypeKind.from(paramType);
-            int slot = slotBase + 1 + paramSlot(desc, p); // +1 for 'this' at slot 0
-            cb.storeLocal(tk, slot);
-        }
-        // Store 'this'
-        cb.astore(slotBase); // slot 0 of inlined method = 'this'
-
-        // Build label remap table
-        Map<Label, Label> labelMap = new HashMap<>();
-        for (var elem : codeAttr.elementList()) {
-            if (elem instanceof LabelTarget lt) {
-                labelMap.put(lt.label(), cb.newLabel());
-            }
-        }
+        Map<Label, Label> labelMap = buildLabelMap(cb, codeAttr);
 
         int returnCount = countReturns(codeAttr);
         boolean multiReturn = returnCount > 1;
         Label endLabel = multiReturn ? cb.newLabel() : null;
-        var returnType = desc.returnType();
-        var returnKind = returnType.descriptorString().equals("V") ? null : TypeKind.from(returnType);
+        var returnKind = desc.returnType().descriptorString().equals("V")
+                ? null : TypeKind.from(desc.returnType());
         int returnSlot = slotBase + codeAttr.maxLocals();
-        // Next available slot after this method's locals + return temp
         int nextSlotBase = returnSlot + (multiReturn && returnKind != null ? returnKind.slotSize() : 0);
 
-        // Track the high-water mark for nested inlines
-        int highWaterSlot = nextSlotBase;
+        int highWaterSlot = emitInstanceElements(cb, codeAttr, labelMap, slotBase, nextSlotBase,
+                owner, inlineMethods, allMethods, staticInliner, maxDepth,
+                multiReturn, endLabel, returnKind, returnSlot);
 
+        if (multiReturn) {
+            cb.labelBinding(endLabel);
+            if (returnKind != null) cb.loadLocal(returnKind, returnSlot);
+        }
+        return highWaterSlot;
+    }
+
+    private static void storeInstanceParams(CodeBuilder cb, java.lang.constant.MethodTypeDesc desc, int slotBase) {
+        for (int p = desc.parameterCount() - 1; p >= 0; p--) {
+            cb.storeLocal(TypeKind.from(desc.parameterType(p)), slotBase + 1 + paramSlot(desc, p));
+        }
+        cb.astore(slotBase);
+    }
+
+    private static Map<Label, Label> buildLabelMap(CodeBuilder cb, CodeModel codeAttr) {
+        Map<Label, Label> labelMap = new HashMap<>();
+        for (var elem : codeAttr.elementList()) {
+            if (elem instanceof LabelTarget lt) labelMap.put(lt.label(), cb.newLabel());
+        }
+        return labelMap;
+    }
+
+    private static int emitInstanceElements(CodeBuilder cb, CodeModel codeAttr, Map<Label, Label> labelMap,
+            int slotBase, int nextSlotBase, ClassDesc owner,
+            Map<String, MethodModel> inlineMethods, Map<String, MethodModel> allMethods,
+            MethodInliner staticInliner, int maxDepth,
+            boolean multiReturn, Label endLabel, TypeKind returnKind, int returnSlot) {
+        int highWaterSlot = nextSlotBase;
         for (var elem : codeAttr.elementList()) {
             switch (elem) {
                 case LabelTarget lt -> cb.labelBinding(labelMap.get(lt.label()));
@@ -172,74 +182,41 @@ public final class TemplateTransformer {
                 case StoreInstruction si -> cb.storeLocal(si.typeKind(), si.slot() + slotBase);
                 case IncrementInstruction ii -> cb.iinc(ii.slot() + slotBase, ii.constant());
                 case BranchInstruction bi -> cb.branch(bi.opcode(), labelMap.get(bi.target()));
-
                 case LookupSwitchInstruction lsi -> {
                     var cases = lsi.cases().stream()
-                            .map(c -> SwitchCase.of(c.caseValue(), labelMap.get(c.target())))
-                            .toList();
+                            .map(c -> SwitchCase.of(c.caseValue(), labelMap.get(c.target()))).toList();
                     cb.lookupswitch(labelMap.get(lsi.defaultTarget()), cases);
                 }
-
                 case TableSwitchInstruction tsi -> {
                     var cases = tsi.cases().stream()
-                            .map(c -> SwitchCase.of(c.caseValue(), labelMap.get(c.target())))
-                            .toList();
-                    cb.tableswitch(tsi.lowValue(), tsi.highValue(),
-                            labelMap.get(tsi.defaultTarget()), cases);
+                            .map(c -> SwitchCase.of(c.caseValue(), labelMap.get(c.target()))).toList();
+                    cb.tableswitch(tsi.lowValue(), tsi.highValue(), labelMap.get(tsi.defaultTarget()), cases);
                 }
-
                 case ReturnInstruction _ -> {
-                    if (!multiReturn) {
-                        // Single return: value stays on stack
-                    } else {
-                        if (returnKind != null) {
-                            cb.storeLocal(returnKind, returnSlot);
-                        }
+                    if (multiReturn) {
+                        if (returnKind != null) cb.storeLocal(returnKind, returnSlot);
                         cb.branch(Opcode.GOTO, endLabel);
                     }
                 }
-
                 case InvokeInstruction ii -> {
-                    // Recursively inline @Inline private methods
                     if ((ii.opcode() == Opcode.INVOKESPECIAL || ii.opcode() == Opcode.INVOKEVIRTUAL)
                             && ii.owner().asSymbol().equals(owner)) {
-                        String key = ii.name().stringValue() + ii.type().stringValue();
-                        var callee = inlineMethods.get(key);
+                        var callee = inlineMethods.get(ii.name().stringValue() + ii.type().stringValue());
                         if (callee != null && maxDepth > 0) {
                             int used = inlineInstanceMethod(cb, callee, staticInliner, owner,
                                     inlineMethods, allMethods, maxDepth - 1, nextSlotBase);
                             highWaterSlot = Math.max(highWaterSlot, used);
-                        } else {
-                            cb.with(ii);
-                        }
-                    } else {
-                        cb.with(ii);
-                    }
+                        } else cb.with(ii);
+                    } else cb.with(ii);
                 }
-
                 case ExceptionCatch ec -> cb.exceptionCatch(
-                        labelMap.get(ec.tryStart()),
-                        labelMap.get(ec.tryEnd()),
-                        labelMap.get(ec.handler()),
-                        ec.catchType());
-
-                case LineNumber _ -> {}
-                case LocalVariable _ -> {}
-                case LocalVariableType _ -> {}
-                case CharacterRange _ -> {}
-
+                        labelMap.get(ec.tryStart()), labelMap.get(ec.tryEnd()),
+                        labelMap.get(ec.handler()), ec.catchType());
+                case LineNumber _, LocalVariable _, LocalVariableType _, CharacterRange _ -> {}
                 case Instruction i -> cb.with(i);
                 default -> {}
             }
         }
-
-        if (multiReturn) {
-            cb.labelBinding(endLabel);
-            if (returnKind != null) {
-                cb.loadLocal(returnKind, returnSlot);
-            }
-        }
-
         return highWaterSlot;
     }
 
@@ -269,6 +246,27 @@ public final class TemplateTransformer {
     private static boolean isPrivateInstance(MethodModel method) {
         return method.flags().has(java.lang.reflect.AccessFlag.PRIVATE)
                 && !method.flags().has(java.lang.reflect.AccessFlag.STATIC);
+    }
+
+    /**
+     * Rewrite all {@code invokestatic} calls targeting {@code fromOwner} to reference
+     * {@code toOwner} instead. Used to swap the default {@code ChunkFilter} class
+     * reference to a user-provided filter class before {@code BytecodeInliner} inlines it.
+     */
+    public static byte[] rewriteFilterOwner(byte[] classBytes, ClassDesc fromOwner, ClassDesc toOwner) {
+        var cf = ClassFile.of();
+        ClassModel model = cf.parse(classBytes);
+
+        return cf.transformClass(model, ClassTransform.transformingMethodBodies(
+                (cb, elem) -> {
+                    if (elem instanceof InvokeInstruction ii
+                            && ii.opcode() == Opcode.INVOKESTATIC
+                            && ii.owner().asSymbol().equals(fromOwner)) {
+                        cb.invokestatic(toOwner, ii.name().stringValue(), ii.typeSymbol());
+                    } else {
+                        cb.with(elem);
+                    }
+                }));
     }
 
     /**

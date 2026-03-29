@@ -125,24 +125,4 @@ public final class Utf8Kernel {
         return accumulator.add(literal, inRange);
     }
 
-    // --- Decode ---
-
-    @Inline
-    public static int decode(MatchStorage matchStorage, ByteVector accumulator,
-            int globalCount, int fileOffset) {
-        var findMask = accumulator.compare(VectorOperators.NE, 0);
-        var bits = findMask.toLong();
-        var count = findMask.trueCount();
-
-        if (count != 0) {
-            accumulator.compress(findMask).intoArray(matchStorage.getLiteralBuffer(), globalCount);
-            var posBuf = matchStorage.getPositionsBuffer();
-            int offset = globalCount;
-            while (bits != 0) {
-                posBuf[offset++] = Long.numberOfTrailingZeros(bits) + fileOffset;
-                bits &= (bits - 1);
-            }
-        }
-        return globalCount + count;
-    }
 }

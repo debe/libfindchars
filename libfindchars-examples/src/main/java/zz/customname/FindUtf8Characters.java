@@ -45,7 +45,7 @@ class FindUtf8Characters {
 
         for (int i = 0; i < match.size(); i++) {
             byte lit = match.getLiteralAt(matchStorage, i);
-            int pos = match.getPositionAt(matchStorage, i);
+            long pos = match.getPositionAt(matchStorage, i);
 
             if (lit == wsLit) {
                 System.out.println("  whitespace at byte " + pos);

@@ -140,14 +140,14 @@ public class SweepBenchmark {
 
     @Benchmark
     @CompilerControl(CompilerControl.Mode.DONT_INLINE)
-    public int simdCompiled() {
+    public long simdCompiled() {
         var view = engine.find(dataSegment, matchStorage);
         return matchStorage.getPositionsBuffer()[view.size() - 1];
     }
 
     @Benchmark
     @CompilerControl(CompilerControl.Mode.DONT_INLINE)
-    public int simdC2Jit() {
+    public long simdC2Jit() {
         var view = c2jitEngine.find(dataSegment, c2jitStorage);
         return c2jitStorage.getPositionsBuffer()[view.size() - 1];
     }

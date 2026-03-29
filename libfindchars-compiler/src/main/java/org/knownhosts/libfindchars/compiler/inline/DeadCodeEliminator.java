@@ -48,15 +48,23 @@ public final class DeadCodeEliminator {
     private static void eliminateInMethod(CodeBuilder cb, CodeModel codeModel) {
         var elements = codeModel.elementList();
 
-        // First pass: collect elements and indices, resolve constant comparisons.
-        // Use parallel lists: elements + a map of indices that should become goto targets.
+        // First pass: resolve constant comparisons to gotos or fall-through
         List<CodeElement> resolved = new ArrayList<>();
-        Map<Integer, Label> resolvedGotos = new HashMap<>(); // index → goto target
+        Map<Integer, Label> resolvedGotos = new HashMap<>();
+        resolveConstantBranches(elements, resolved, resolvedGotos);
 
+        // Second pass: find reachable labels
+        Set<Label> reachableLabels = collectReachableLabels(resolved, resolvedGotos);
+
+        // Third pass: emit code, removing unreachable sections
+        emitReachableCode(cb, resolved, resolvedGotos, reachableLabels);
+    }
+
+    private static void resolveConstantBranches(List<CodeElement> elements,
+            List<CodeElement> resolved, Map<Integer, Label> resolvedGotos) {
         for (int i = 0; i < elements.size(); i++) {
             var elem = elements.get(i);
 
-            // Pattern: iconst_X; iconst_Y; if_icmpXX label
             if (elem instanceof BranchInstruction bi && isIfIcmp(bi.opcode())) {
                 int constVal2 = peekConst(resolved, resolved.size() - 1);
                 int constVal1 = peekConst(resolved, resolved.size() - 2);
@@ -66,13 +74,12 @@ public final class DeadCodeEliminator {
                     resolved.remove(resolved.size() - 1);
                     if (taken) {
                         resolvedGotos.put(resolved.size(), bi.target());
-                        resolved.add(elem); // placeholder
+                        resolved.add(elem);
                     }
                     continue;
                 }
             }
 
-            // Pattern: iconst_X; ifeq/ifne/iflt/ifge/ifgt/ifle label
             if (elem instanceof BranchInstruction bi && isIfSingle(bi.opcode())) {
                 int constVal = peekConst(resolved, resolved.size() - 1);
                 if (constVal != Integer.MIN_VALUE) {
@@ -80,7 +87,7 @@ public final class DeadCodeEliminator {
                     resolved.remove(resolved.size() - 1);
                     if (taken) {
                         resolvedGotos.put(resolved.size(), bi.target());
-                        resolved.add(elem); // placeholder
+                        resolved.add(elem);
                     }
                     continue;
                 }
@@ -88,8 +95,10 @@ public final class DeadCodeEliminator {
 
             resolved.add(elem);
         }
+    }
 
-        // Second pass: find reachable labels
+    private static Set<Label> collectReachableLabels(List<CodeElement> resolved,
+            Map<Integer, Label> resolvedGotos) {
         Set<Label> reachableLabels = new HashSet<>();
         for (int idx = 0; idx < resolved.size(); idx++) {
             var gotoTarget = resolvedGotos.get(idx);
@@ -112,8 +121,11 @@ public final class DeadCodeEliminator {
                 reachableLabels.add(ec.handler());
             }
         }
+        return reachableLabels;
+    }
 
-        // Third pass: emit code, removing unreachable sections
+    private static void emitReachableCode(CodeBuilder cb, List<CodeElement> resolved,
+            Map<Integer, Label> resolvedGotos, Set<Label> reachableLabels) {
         boolean unreachable = false;
         for (int idx = 0; idx < resolved.size(); idx++) {
             var elem = resolved.get(idx);
@@ -128,20 +140,15 @@ public final class DeadCodeEliminator {
 
             if (unreachable) continue;
 
-            // Skip debug attributes that reference removed code
             if (elem instanceof LocalVariable || elem instanceof LocalVariableType) continue;
 
             var gotoTarget = resolvedGotos.get(idx);
             if (gotoTarget != null) {
                 cb.goto_(gotoTarget);
                 unreachable = true;
-            } else if (elem instanceof ReturnInstruction) {
-                cb.with(elem);
-                unreachable = true;
-            } else if (elem instanceof ThrowInstruction) {
-                cb.with(elem);
-                unreachable = true;
-            } else if (elem instanceof BranchInstruction bi && bi.opcode() == Opcode.GOTO) {
+            } else if (elem instanceof ReturnInstruction
+                    || elem instanceof ThrowInstruction
+                    || (elem instanceof BranchInstruction bi && bi.opcode() == Opcode.GOTO)) {
                 cb.with(elem);
                 unreachable = true;
             } else {

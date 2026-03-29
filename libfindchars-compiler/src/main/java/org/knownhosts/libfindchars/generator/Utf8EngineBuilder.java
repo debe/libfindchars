@@ -15,7 +15,10 @@ import org.knownhosts.libfindchars.compiler.inline.BytecodeInliner;
 import org.knownhosts.libfindchars.compiler.inline.SpecializationConfig;
 import org.knownhosts.libfindchars.compiler.inline.TemplateTransformer;
 
+import org.knownhosts.libfindchars.api.ChunkFilter;
 import org.knownhosts.libfindchars.api.FindEngine;
+import org.knownhosts.libfindchars.api.NoOpChunkFilter;
+import org.knownhosts.libfindchars.api.VpaKernel;
 import org.knownhosts.libfindchars.api.Utf8EngineTemplate;
 import org.knownhosts.libfindchars.api.Utf8Kernel;
 import org.knownhosts.libfindchars.compiler.AsciiFindMask;
@@ -50,7 +53,7 @@ import jdk.incubator.vector.VectorSpecies;
  */
 public class Utf8EngineBuilder {
 
-    static final Logger logger = LoggerFactory.getLogger(Utf8EngineBuilder.class);
+    private static final Logger logger = LoggerFactory.getLogger(Utf8EngineBuilder.class);
 
     private static final byte[] CLASSIFY_TABLE = {
         1, 1, 1, 1, 1, 1, 1, 1,  // 0x0-0x7: ASCII
@@ -75,6 +78,8 @@ public class Utf8EngineBuilder {
         private boolean compiled = true;
         private final List<CodepointEntry> entries = new ArrayList<>();
         private final List<RangeOperation> rangeOperations = new ArrayList<>();
+        private Class<? extends ChunkFilter> filterClass;
+        private String[] filterLiteralBindings;
 
         private Builder() {}
 
@@ -132,10 +137,23 @@ public class Utf8EngineBuilder {
             return this;
         }
 
+        /**
+         * Attach a chunk filter for PDA processing. The filter class must provide an
+         * {@code @Inline public static ByteVector apply(...)} method matching the
+         * {@link ChunkFilter#apply} signature.
+         *
+         * @param filterClass      class with {@code @Inline} static apply method
+         * @param literalBindings  literal names to bind to filter parameters, in order
+         */
+        public Builder chunkFilter(Class<? extends ChunkFilter> filterClass, String... literalBindings) {
+            this.filterClass = filterClass;
+            this.filterLiteralBindings = literalBindings;
+            return this;
+        }
+
         public Utf8BuildResult build() {
             var sp = species != null ? species : ByteVector.SPECIES_PREFERRED;
 
-            // Determine max rounds needed (ASCII groups are always 1 round)
             int maxRounds = 1;
             for (var entry : entries) {
                 if (!entry.asciiGroup()) {
@@ -143,10 +161,40 @@ public class Utf8EngineBuilder {
                 }
             }
 
-            // Assign literal names per entry per round.
-            // Multi-byte entries sharing the same byte value in a round get the same
-            // canonical literal name so Z3 only sees one constraint per unique byte.
-            String[][] literalNames = new String[entries.size()][maxRounds];
+            var literalNames = assignLiteralNames(entries, maxRounds);
+            var perRoundLiterals = collectPerRoundLiterals(entries, literalNames, maxRounds);
+            var roundMaskGroups = solveAllRounds(perRoundLiterals, maxRounds, sp.vectorByteSize());
+
+            var charSpecResult = buildCharSpecsAndLiteralMap(entries, literalNames, roundMaskGroups, sp);
+            var literalMap = charSpecResult.literalMap();
+            var lutResult = buildFlatGroupLUTs(roundMaskGroups, sp, maxRounds);
+            var rangeResult = buildRangeVectors(literalMap, sp);
+
+            var rangeLower = rangeResult.lower();
+            var rangeUpper = rangeResult.upper();
+            var rangeLit = rangeResult.lit();
+
+            var cleanLUTs = buildCleanLUTs(lutResult.literalVecs(), sp);
+
+            logger.info("Built UTF-8 engine: {} rounds, {} groups (flat), {} char specs, {} range ops, {} literals",
+                    maxRounds, lutResult.totalGroups(), charSpecResult.csCount(),
+                    rangeLower.length, literalMap.size());
+
+            return compileEngine(sp, compiled, literalMap,
+                    ByteVector.broadcast(sp, (byte) 0),
+                    ByteVector.fromArray(sp, Arrays.copyOf(CLASSIFY_TABLE, sp.vectorByteSize()), 0),
+                    ByteVector.broadcast(sp, 0x0f),
+                    lutResult.lowLUTs(), lutResult.highLUTs(), lutResult.literalVecs(), cleanLUTs,
+                    lutResult.roundGroupStart(), lutResult.roundGroupCount(), lutResult.flatGroupLitCounts(),
+                    maxRounds, charSpecResult.csCount(), charSpecResult.csByteLengths(),
+                    charSpecResult.csRoundLitVecs(), charSpecResult.csFinalLitVecs(),
+                    rangeLower, rangeUpper, rangeLit);
+        }
+
+        private record RangeResult(ByteVector[] lower, ByteVector[] upper, ByteVector[] lit) {}
+
+        private static String[][] assignLiteralNames(List<CodepointEntry> entries, int maxRounds) {
+            var literalNames = new String[entries.size()][maxRounds];
             for (int r = 0; r < maxRounds; r++) {
                 Map<Byte, String> byteToName = new HashMap<>();
                 final int round = r;
@@ -162,15 +210,14 @@ public class Utf8EngineBuilder {
                     }
                 }
             }
+            return literalNames;
+        }
 
-            // Collect per-round ByteLiterals
+        private static List<List<ByteLiteral>> collectPerRoundLiterals(
+                List<CodepointEntry> entries, String[][] literalNames, int maxRounds) {
             List<List<ByteLiteral>> perRoundLiterals = new ArrayList<>();
-            for (int r = 0; r < maxRounds; r++) {
-                perRoundLiterals.add(new ArrayList<>());
-            }
+            for (int r = 0; r < maxRounds; r++) perRoundLiterals.add(new ArrayList<>());
 
-            // Track which literal names have already been added per round
-            // to avoid duplicate ByteLiterals for shared-byte multi-byte entries
             List<Set<String>> seenPerRound = new ArrayList<>();
             for (int r = 0; r < maxRounds; r++) seenPerRound.add(new HashSet<>());
 
@@ -179,7 +226,6 @@ public class Utf8EngineBuilder {
                 byte[] bytes = entry.utf8Bytes();
 
                 if (entry.asciiGroup()) {
-                    // ASCII group: one ByteLiteral at round 0 with all byte values as chars
                     char[] chars = new char[bytes.length];
                     for (int i = 0; i < bytes.length; i++) {
                         chars[i] = (char) (bytes[i] & 0xFF);
@@ -187,8 +233,6 @@ public class Utf8EngineBuilder {
                     perRoundLiterals.get(0).add(new ByteLiteral(literalNames[e][0], chars));
                     seenPerRound.get(0).add(literalNames[e][0]);
                 } else {
-                    // Multi-byte: one ByteLiteral per round with a single byte value,
-                    // but skip if we already created one for this canonical name
                     for (int r = 0; r < bytes.length; r++) {
                         if (seenPerRound.get(r).add(literalNames[e][r])) {
                             char[] chars = { (char) (bytes[r] & 0xFF) };
@@ -197,20 +241,20 @@ public class Utf8EngineBuilder {
                     }
                 }
             }
+            return perRoundLiterals;
+        }
 
-            // Solve each round sequentially, passing used literals forward.
-            // If Z3 can't find a single shuffle mask for all literals in a round,
-            // auto-split into two groups and solve each half separately.
+        private static List<List<AsciiFindMask>> solveAllRounds(
+                List<List<ByteLiteral>> perRoundLiterals, int maxRounds, int vectorByteSize) {
             List<List<AsciiFindMask>> roundMaskGroups = new ArrayList<>();
             List<Byte> usedLiterals = new ArrayList<>();
-
             try (LiteralCompiler compiler = new LiteralCompiler()) {
                 for (int r = 0; r < maxRounds; r++) {
                     var literals = perRoundLiterals.get(r);
                     if (literals.isEmpty()) {
                         throw new IllegalStateException("Round " + r + " has no literals");
                     }
-                    var groupMasks = solveWithAutoSplit(compiler, usedLiterals, literals, r, sp.vectorByteSize());
+                    var groupMasks = solveWithAutoSplit(compiler, usedLiterals, literals, r, vectorByteSize);
                     roundMaskGroups.add(groupMasks);
                     for (var mask : groupMasks) {
                         usedLiterals.addAll(mask.literals().values());
@@ -219,21 +263,23 @@ public class Utf8EngineBuilder {
             } catch (Exception e) {
                 throw new IllegalStateException("Z3 solver error", e);
             }
+            return roundMaskGroups;
+        }
 
-            // Helper: find literal byte across all groups in a round
-            java.util.function.BiFunction<Integer, String, Byte> findLiteral = (round, name) -> {
-                for (var mask : roundMaskGroups.get(round)) {
-                    if (mask.literals().containsKey(name)) {
-                        return mask.literalOf(name);
-                    }
-                }
-                throw new IllegalStateException("Literal '" + name + "' not found in round " + round);
-            };
+        private record CharSpecResult(
+                Map<String, Byte> literalMap,
+                int csCount,
+                int[] csByteLengths,
+                ByteVector[][] csRoundLitVecs,
+                ByteVector[] csFinalLitVecs) {}
 
-            // Build charSpec arrays and literal map for codegen
-            List<int[]> charSpecByteLengthsList = new ArrayList<>();
-            List<ByteVector[]> charSpecRoundLitVecsList = new ArrayList<>();
-            List<ByteVector> charSpecFinalLitVecsList = new ArrayList<>();
+        private static CharSpecResult buildCharSpecsAndLiteralMap(
+                List<CodepointEntry> entries, String[][] literalNames,
+                List<List<AsciiFindMask>> roundMaskGroups, VectorSpecies<Byte> sp) {
+
+            List<int[]> csByteLengthsList = new ArrayList<>();
+            List<ByteVector[]> csRoundLitVecsList = new ArrayList<>();
+            List<ByteVector> csFinalLitVecsList = new ArrayList<>();
             Map<String, Byte> literalMap = new LinkedHashMap<>();
 
             for (int e = 0; e < entries.size(); e++) {
@@ -241,39 +287,61 @@ public class Utf8EngineBuilder {
                 byte[] bytes = entry.utf8Bytes();
 
                 if (entry.asciiGroup()) {
-                    // ASCII: map name -> round 0 literal byte
-                    byte litByte = findLiteral.apply(0, literalNames[e][0]);
+                    byte litByte = findLiteralByte(roundMaskGroups,0, literalNames[e][0]);
                     literalMap.put(entry.name(), litByte);
                 } else {
-                    // Multi-byte: build per-round literal vectors
                     ByteVector[] rlVecs = new ByteVector[bytes.length];
                     byte finalLitByte = 0;
                     for (int r = 0; r < bytes.length; r++) {
-                        byte litByte = findLiteral.apply(r, literalNames[e][r]);
+                        byte litByte = findLiteralByte(roundMaskGroups,r, literalNames[e][r]);
                         rlVecs[r] = ByteVector.broadcast(sp, litByte);
                         finalLitByte = litByte;
                     }
-                    charSpecByteLengthsList.add(new int[]{bytes.length});
-                    charSpecRoundLitVecsList.add(rlVecs);
-                    charSpecFinalLitVecsList.add(ByteVector.broadcast(sp, finalLitByte));
+                    csByteLengthsList.add(new int[]{bytes.length});
+                    csRoundLitVecsList.add(rlVecs);
+                    csFinalLitVecsList.add(ByteVector.broadcast(sp, finalLitByte));
                     literalMap.put(entry.name(), finalLitByte);
                 }
             }
 
-            // Flatten round mask groups for codegen: each group gets its own LUT pair + literal vecs
+            int csCount = csByteLengthsList.size();
+            int[] csByteLengths = new int[csCount];
+            ByteVector[][] csRoundLitVecs = new ByteVector[csCount][];
+            ByteVector[] csFinalLitVecs = new ByteVector[csCount];
+            for (int s = 0; s < csCount; s++) {
+                csByteLengths[s] = csByteLengthsList.get(s)[0];
+                csRoundLitVecs[s] = csRoundLitVecsList.get(s);
+                csFinalLitVecs[s] = csFinalLitVecsList.get(s);
+            }
+            return new CharSpecResult(literalMap, csCount, csByteLengths, csRoundLitVecs, csFinalLitVecs);
+        }
+
+        private static byte findLiteralByte(List<List<AsciiFindMask>> roundMaskGroups,
+                int round, String name) {
+            for (var mask : roundMaskGroups.get(round)) {
+                if (mask.literals().containsKey(name)) {
+                    return mask.literalOf(name);
+                }
+            }
+            throw new IllegalStateException("Literal '" + name + "' not found in round " + round);
+        }
+
+        private record LutResult(
+                ByteVector[] lowLUTs, ByteVector[] highLUTs, ByteVector[][] literalVecs,
+                int[] roundGroupStart, int[] roundGroupCount, int[] flatGroupLitCounts,
+                int totalGroups) {}
+
+        private static LutResult buildFlatGroupLUTs(
+                List<List<AsciiFindMask>> roundMaskGroups, VectorSpecies<Byte> sp, int maxRounds) {
             int totalGroups = 0;
             for (var groups : roundMaskGroups) totalGroups += groups.size();
-
-            var zero = ByteVector.broadcast(sp, (byte) 0);
-            var classifyVec = ByteVector.fromArray(sp,
-                    Arrays.copyOf(CLASSIFY_TABLE, sp.vectorByteSize()), 0);
-            var lowMaskVec = ByteVector.broadcast(sp, 0x0f);
 
             var lowLUTs = new ByteVector[totalGroups];
             var highLUTs = new ByteVector[totalGroups];
             var literalVecs = new ByteVector[totalGroups][];
             int[] roundGroupStart = new int[maxRounds];
             int[] roundGroupCount = new int[maxRounds];
+            int[] flatGroupLitCounts = new int[totalGroups];
 
             int flatIdx = 0;
             for (int r = 0; r < maxRounds; r++) {
@@ -291,131 +359,192 @@ public class Utf8EngineBuilder {
                     for (byte lit : lits) {
                         literalVecs[flatIdx][j++] = ByteVector.broadcast(sp, lit);
                     }
+                    flatGroupLitCounts[flatIdx] = literalVecs[flatIdx].length;
                     flatIdx++;
                 }
             }
+            return new LutResult(lowLUTs, highLUTs, literalVecs,
+                    roundGroupStart, roundGroupCount, flatGroupLitCounts, totalGroups);
+        }
 
-            int csCount = charSpecByteLengthsList.size();
-            int[] csByteLengths = new int[csCount];
-            ByteVector[][] csRoundLitVecs = new ByteVector[csCount][];
-            ByteVector[] csFinalLitVecs = new ByteVector[csCount];
-            for (int s = 0; s < csCount; s++) {
-                csByteLengths[s] = charSpecByteLengthsList.get(s)[0];
-                csRoundLitVecs[s] = charSpecRoundLitVecsList.get(s);
-                csFinalLitVecs[s] = charSpecFinalLitVecsList.get(s);
-            }
-
-            // Build range vectors
-            List<ByteVector> rangeLowerList = new ArrayList<>();
-            List<ByteVector> rangeUpperList = new ArrayList<>();
-            List<ByteVector> rangeLitList = new ArrayList<>();
-            // Find next free literal byte above all Z3-assigned literals
+        private RangeResult buildRangeVectors(Map<String, Byte> literalMap, VectorSpecies<Byte> sp) {
+            var lowerList = new ArrayList<ByteVector>();
+            var upperList = new ArrayList<ByteVector>();
+            var litList = new ArrayList<ByteVector>();
             int nextLit = 1;
             for (byte used : literalMap.values()) {
                 nextLit = Math.max(nextLit, (used & 0xFF) + 1);
             }
             for (RangeOperation operation : rangeOperations) {
                 while (literalMap.containsValue((byte) nextLit)) nextLit++;
-                rangeLowerList.add(ByteVector.broadcast(sp, operation.from()));
-                rangeUpperList.add(ByteVector.broadcast(sp, operation.to()));
-                rangeLitList.add(ByteVector.broadcast(sp, (byte) nextLit));
+                lowerList.add(ByteVector.broadcast(sp, operation.from()));
+                upperList.add(ByteVector.broadcast(sp, operation.to()));
+                litList.add(ByteVector.broadcast(sp, (byte) nextLit));
                 literalMap.put(operation.name(), (byte) nextLit);
                 nextLit++;
             }
+            return new RangeResult(
+                    lowerList.toArray(new ByteVector[0]),
+                    upperList.toArray(new ByteVector[0]),
+                    litList.toArray(new ByteVector[0]));
+        }
 
-            var rangeLower = rangeLowerList.toArray(new ByteVector[0]);
-            var rangeUpper = rangeUpperList.toArray(new ByteVector[0]);
-            var rangeLit = rangeLitList.toArray(new ByteVector[0]);
-
-            int[] flatGroupLitCounts = new int[totalGroups];
-            var cleanLUTs = new ByteVector[totalGroups];
-            for (int g = 0; g < totalGroups; g++) {
-                flatGroupLitCounts[g] = literalVecs[g].length;
-                // Build cleanup LUT: lut[lit_val] = lit_val, all others = 0
+        private static ByteVector[] buildCleanLUTs(ByteVector[][] literalVecs, VectorSpecies<Byte> sp) {
+            var cleanLUTs = new ByteVector[literalVecs.length];
+            for (int g = 0; g < literalVecs.length; g++) {
                 byte[] lutBytes = new byte[sp.vectorByteSize()];
                 for (var litVec : literalVecs[g]) {
                     byte litVal = litVec.lane(0);
-                    assert litVal > 0 && (litVal & 0xFF) < sp.vectorByteSize()
-                        : "Literal byte " + (litVal & 0xFF) + " exceeds vector size " + sp.vectorByteSize();
+                    if (litVal <= 0 || (litVal & 0xFF) >= sp.vectorByteSize()) {
+                        throw new IllegalArgumentException(
+                                "Literal byte " + (litVal & 0xFF) + " out of valid range [1, "
+                                + (sp.vectorByteSize() - 1) + "] for " + sp.vectorByteSize()
+                                + "-byte vectors (ARM NEON: max 15, AVX-512: max 63)");
+                    }
                     lutBytes[litVal & 0xFF] = litVal;
                 }
                 cleanLUTs[g] = ByteVector.fromArray(sp, lutBytes, 0);
             }
+            return cleanLUTs;
+        }
 
-            logger.info("Built UTF-8 engine: {} rounds, {} groups (flat), {} char specs, {} range ops, {} literals",
-                    maxRounds, totalGroups, csCount, rangeLower.length, literalMap.size());
+        private static List<AsciiFindMask> solveWithAutoSplit(LiteralCompiler compiler,
+                List<Byte> usedLiterals, List<ByteLiteral> literals, int round, int vectorByteSize) throws Exception {
+            return solveWithAutoSplit(compiler, usedLiterals, literals, round, vectorByteSize, 0);
+        }
+
+        private static List<AsciiFindMask> solveWithAutoSplit(LiteralCompiler compiler,
+                List<Byte> usedLiterals, List<ByteLiteral> literals, int round,
+                int vectorByteSize, int depth) throws Exception {
+            try {
+                var group = new AsciiLiteralGroup("round" + round + "_d" + depth, literals);
+                var masks = compiler.solve(usedLiterals, vectorByteSize, group);
+                return List.of(masks.getFirst());
+            } catch (Exception e) {
+                if (literals.size() <= 1) {
+                    throw new IllegalStateException(
+                            "Z3 solver failed for single literal in round " + round
+                            + " (vectorByteSize=" + vectorByteSize + ", depth=" + depth + ")", e);
+                }
+                logger.info("Auto-splitting round {} ({} literals, depth {}) into two groups",
+                        round, literals.size(), depth);
+                int mid = literals.size() / 2;
+
+                // Solve first half (may recurse further)
+                var resultLeft = solveWithAutoSplit(compiler, usedLiterals,
+                        literals.subList(0, mid), round, vectorByteSize, depth + 1);
+
+                // Accumulate used literals from left half before solving right
+                var extended = new ArrayList<>(usedLiterals);
+                for (var mask : resultLeft) {
+                    extended.addAll(mask.literals().values());
+                }
+
+                // Solve second half (may recurse further)
+                var resultRight = solveWithAutoSplit(compiler, extended,
+                        literals.subList(mid, literals.size()), round, vectorByteSize, depth + 1);
+
+                var combined = new ArrayList<>(resultLeft);
+                combined.addAll(resultRight);
+                return combined;
+            }
+        }
+
+        private Utf8BuildResult compileEngine(
+                VectorSpecies<Byte> sp, boolean compiled, Map<String, Byte> literalMap,
+                ByteVector zero, ByteVector classifyVec, ByteVector lowMaskVec,
+                ByteVector[] lowLUTs, ByteVector[] highLUTs, ByteVector[][] literalVecs,
+                ByteVector[] cleanLUTs, int[] roundGroupStart, int[] roundGroupCount,
+                int[] flatGroupLitCounts, int maxRounds, int csCount,
+                int[] csByteLengths, ByteVector[][] csRoundLitVecs, ByteVector[] csFinalLitVecs,
+                ByteVector[] rangeLower, ByteVector[] rangeUpper, ByteVector[] rangeLit) {
+
+            boolean hasFilter = filterClass != null && filterLiteralBindings != null
+                    && filterLiteralBindings.length > 0;
+            int filterEnabledVal = hasFilter ? 1 : 0;
+
+            ByteVector[] filterLitVecs = resolveFilterLiterals(sp, literalMap, hasFilter, zero);
+            int useCompressVal = sp.vectorByteSize() >= 64 ? 1 : 0;
+
+            Object[] ctorArgs = {
+                    sp, zero, classifyVec, lowMaskVec,
+                    lowLUTs, highLUTs, literalVecs, cleanLUTs,
+                    roundGroupStart, roundGroupCount, flatGroupLitCounts,
+                    csByteLengths, csRoundLitVecs, csFinalLitVecs,
+                    rangeLower, rangeUpper, rangeLit,
+                    filterEnabledVal, filterLitVecs, useCompressVal
+            };
 
             if (!compiled) {
-                // C2 JIT fallback: use Utf8EngineTemplate directly
                 var engine = (FindEngine) new Utf8EngineTemplate(
                         sp, zero, classifyVec, lowMaskVec,
                         lowLUTs, highLUTs, literalVecs, cleanLUTs,
                         roundGroupStart, roundGroupCount, flatGroupLitCounts,
                         csByteLengths, csRoundLitVecs, csFinalLitVecs,
-                        rangeLower, rangeUpper, rangeLit);
+                        rangeLower, rangeUpper, rangeLit,
+                        filterEnabledVal, filterLitVecs, useCompressVal);
                 return new Utf8BuildResult(engine, literalMap);
             }
 
-            // Build specialization config for the template transformer
-            var config = SpecializationConfig.builder()
-                    .constant("maxRounds", maxRounds)
-                    .constant("rangeCount", rangeLower.length)
-                    .constant("charSpecCount", csCount)
-                    .constant("totalGroups", totalGroups)
-                    .constant("vectorByteSize", sp.vectorByteSize())
-                    .build();
-
-            // Read the template class bytes and apply full specialization pipeline:
-            // 1. Inline @Inline private methods (applyRound, applyGroup, gateCharSpec)
-            // 2. Constant-fold @Inline int fields (maxRounds, rangeCount, etc.)
-            // 3. Dead code elimination (removes unreachable multi-byte branches for ASCII)
-            // 4. Inline @Inline static methods from kernel classes (shuffle, cleanLit, etc.)
-            byte[] classBytes = BytecodeInliner.readClassBytes(Utf8EngineTemplate.class);
-            byte[] specialized = TemplateTransformer.transform(classBytes, config);
-            specialized = BytecodeInliner.inline(specialized, Utf8Kernel.class);
+            byte[] specialized = specializeTemplate(sp, maxRounds, rangeLower.length,
+                    csCount, lowLUTs.length, filterEnabledVal, useCompressVal,
+                    hasFilter, filterClass);
 
             try {
-                // Use privateLookupIn to get a lookup in the template's package
-                var lookup = MethodHandles.privateLookupIn(Utf8EngineTemplate.class, MethodHandles.lookup());
+                var lookup = MethodHandles.privateLookupIn(
+                        Utf8EngineTemplate.class, MethodHandles.lookup());
                 var hidden = lookup.defineHiddenClass(specialized, true);
-                var clazz = hidden.lookupClass();
-
-                var ctor = clazz.getDeclaredConstructors()[0];
+                var ctor = hidden.lookupClass().getDeclaredConstructors()[0];
                 ctor.setAccessible(true);
-                var engine = (FindEngine) ctor.newInstance(
-                        sp, zero, classifyVec, lowMaskVec,
-                        lowLUTs, highLUTs, literalVecs, cleanLUTs,
-                        roundGroupStart, roundGroupCount, flatGroupLitCounts,
-                        csByteLengths, csRoundLitVecs, csFinalLitVecs,
-                        rangeLower, rangeUpper, rangeLit);
+                var engine = (FindEngine) ctor.newInstance(ctorArgs);
                 return new Utf8BuildResult(engine, literalMap);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("Failed to instantiate compiled UTF-8 engine", e);
             }
         }
 
-        private static List<AsciiFindMask> solveWithAutoSplit(LiteralCompiler compiler,
-                List<Byte> usedLiterals, List<ByteLiteral> literals, int round, int vectorByteSize) throws Exception {
-            try {
-                var group = new AsciiLiteralGroup("round" + round, literals);
-                var masks = compiler.solve(usedLiterals, vectorByteSize, group);
-                return List.of(masks.getFirst());
-            } catch (Exception e) {
-                if (literals.size() <= 1) {
-                    throw new IllegalStateException("Z3 solver failed for single literal in round " + round, e);
+        private ByteVector[] resolveFilterLiterals(VectorSpecies<Byte> sp,
+                Map<String, Byte> literalMap, boolean hasFilter, ByteVector zero) {
+            if (!hasFilter) return new ByteVector[0];
+            var vecs = new ByteVector[filterLiteralBindings.length];
+            for (int b = 0; b < filterLiteralBindings.length; b++) {
+                Byte litByte = literalMap.get(filterLiteralBindings[b]);
+                if (litByte == null) {
+                    throw new IllegalStateException(
+                            "Filter literal binding '" + filterLiteralBindings[b]
+                            + "' not found in literal map. Available: " + literalMap.keySet());
                 }
-                logger.info("Auto-splitting round {} ({} literals) into two groups", round, literals.size());
-                int mid = literals.size() / 2;
-                var group1 = new AsciiLiteralGroup("round" + round + "_a", literals.subList(0, mid));
-                var masks1 = compiler.solve(usedLiterals, vectorByteSize, group1);
-                var mask1 = masks1.getFirst();
-
-                var extended = new ArrayList<>(usedLiterals);
-                extended.addAll(mask1.literals().values());
-                var group2 = new AsciiLiteralGroup("round" + round + "_b", literals.subList(mid, literals.size()));
-                var masks2 = compiler.solve(extended, vectorByteSize, group2);
-                return List.of(mask1, masks2.getFirst());
+                vecs[b] = ByteVector.broadcast(sp, litByte);
             }
+            return vecs;
+        }
+
+        private static byte[] specializeTemplate(VectorSpecies<Byte> sp,
+                int maxRounds, int rangeCount, int csCount, int totalGroups,
+                int filterEnabledVal, int useCompressVal, boolean hasFilter,
+                Class<? extends ChunkFilter> filterClass) {
+            var config = SpecializationConfig.builder()
+                    .constant("maxRounds", maxRounds)
+                    .constant("rangeCount", rangeCount)
+                    .constant("charSpecCount", csCount)
+                    .constant("totalGroups", totalGroups)
+                    .constant("vectorByteSize", sp.vectorByteSize())
+                    .constant("filterEnabled", filterEnabledVal)
+                    .constant("useCompress", useCompressVal)
+                    .build();
+
+            byte[] classBytes = BytecodeInliner.readClassBytes(Utf8EngineTemplate.class);
+            byte[] specialized = TemplateTransformer.transform(classBytes, config);
+            specialized = BytecodeInliner.inline(specialized, Utf8Kernel.class);
+
+            if (hasFilter) {
+                var fromOwner = java.lang.constant.ClassDesc.of(NoOpChunkFilter.class.getName());
+                var toOwner = java.lang.constant.ClassDesc.of(filterClass.getName());
+                specialized = TemplateTransformer.rewriteFilterOwner(specialized, fromOwner, toOwner);
+                specialized = BytecodeInliner.inline(specialized, filterClass);
+                specialized = BytecodeInliner.inline(specialized, VpaKernel.class);
+            }
+            return specialized;
         }
     }
 }

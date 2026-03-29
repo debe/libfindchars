@@ -45,7 +45,7 @@ public class LiteralCompiler implements AutoCloseable {
     private final SolverContext context;
     private final ShutdownManager shutdown;
 
-    final static Logger logger = LoggerFactory.getLogger(LiteralCompiler.class);
+    private static final Logger logger = LoggerFactory.getLogger(LiteralCompiler.class);
 
     public LiteralCompiler() throws InvalidConfigurationException {
         Configuration config = Configuration.defaultConfiguration();
@@ -61,11 +61,11 @@ public class LiteralCompiler implements AutoCloseable {
      * @param _char the character to split
      * @return a 2-element array: {@code [lowNibble, highNibble]}
      */
-    public static byte[] toNibbles(char _char) {
+    public static byte[] toNibbles(char ch) {
         byte[] nibbles = new byte[2];
 
-        nibbles[0] = (byte) ((int) _char & 15);
-        nibbles[1] = (byte) ((_char >> 4) & 0x0f);
+        nibbles[0] = (byte) ((int) ch & 15);
+        nibbles[1] = (byte) ((ch >> 4) & 0x0f);
         return nibbles;
     }
 
@@ -121,142 +121,109 @@ public class LiteralCompiler implements AutoCloseable {
     }
 
     public AsciiFindMask solve1(AsciiLiteralGroup literalGroup, List<Byte> usedLiterals, int vectorByteSize) throws InterruptedException, SolverException {
-        // Assume we have a SolverContext instance.
         FormulaManager formulaManager = context.getFormulaManager();
-        BitvectorFormulaManager bitvectorManager = formulaManager.getBitvectorFormulaManager();
-        BooleanFormulaManager booleanManager = formulaManager.getBooleanFormulaManager();
+        BitvectorFormulaManager bvm = formulaManager.getBitvectorFormulaManager();
+        BooleanFormulaManager boolm = formulaManager.getBooleanFormulaManager();
 
-        BitvectorFormula zeroVector = bitvectorManager.makeBitvector(8, 0);
-
-        List<BitvectorFormula> usedLiteralsVectors = usedLiterals.stream()
-                .map(l -> bitvectorManager.makeBitvector(8, l))
-                .toList();
-
-        // nibble matrix (16×16 covers full 0x00-0xFF byte range)
         var lowNibbles = new BitvectorFormula[16];
         var highNibbles = new BitvectorFormula[16];
+        for (int i = 0; i < 16; i++) {
+            lowNibbles[i] = bvm.makeVariable(8, "l_" + i);
+            highNibbles[i] = bvm.makeVariable(8, "h_" + i);
+        }
 
-        // constraints
-        var equations = new BooleanFormula[16][16];
-        List<BooleanFormula> exclusions = Lists.newArrayList();
-
-
-        // literal vectors
         List<BitvectorFormula> literalVectors = Lists.newArrayList();
+        var equations = new BooleanFormula[16][16];
+        buildMatchingConstraints(literalGroup, bvm, lowNibbles, highNibbles, literalVectors, equations);
+        buildExclusionConstraints(bvm, boolm, lowNibbles, highNibbles, literalVectors, equations, vectorByteSize);
 
-        // init vectors
-        for (int i = 0; i < lowNibbles.length; i++) {
-            lowNibbles[i] = bitvectorManager.makeVariable(8, "l_" + i);
-        }
+        List<BooleanFormula> exclusions = buildLiteralExclusions(bvm, boolm, literalVectors, usedLiterals, vectorByteSize);
 
-        for (int i = 0; i < highNibbles.length; i++) {
-            highNibbles[i] = bitvectorManager.makeVariable(8, "h_" + i);
-        }
+        return solveAndExtract(bvm, lowNibbles, highNibbles, literalVectors, equations, exclusions);
+    }
 
+    private void buildMatchingConstraints(AsciiLiteralGroup literalGroup, BitvectorFormulaManager bvm,
+            BitvectorFormula[] lowNibbles, BitvectorFormula[] highNibbles,
+            List<BitvectorFormula> literalVectors, BooleanFormula[][] equations) {
         for (ByteLiteral literal : literalGroup.literals()) {
-            var literalVector = bitvectorManager.makeVariable(8, literal.name());
+            var literalVector = bvm.makeVariable(8, literal.name());
             literalVectors.add(literalVector);
-
-            // build matching constraints
             for (char c : literal.chars()) {
                 var nibbles = toNibbles(c);
-                var equation = bitvectorManager.equal(
-                        bitvectorManager.and(lowNibbles[nibbles[0]],
-                                highNibbles[nibbles[1]]),
-                        literalVector);
-                logger.debug("eq{} {}", nibbles, equation);
-
-                equations[nibbles[0]][nibbles[1]] = equation;
+                equations[nibbles[0]][nibbles[1]] = bvm.equal(
+                        bvm.and(lowNibbles[nibbles[0]], highNibbles[nibbles[1]]), literalVector);
+                logger.debug("eq{} {}", nibbles, equations[nibbles[0]][nibbles[1]]);
             }
         }
+    }
 
-        // build not matching constraints: for non-target nibble pairs, ensure that
-        // the AND result does not equal any literal byte value.
-        // When vectorByteSize > 0 (vpermb cleanup mode), use modular comparison
-        // (lower log2(vectorByteSize) bits) to enable single vpermb cleanup LUT.
-        for (int i = 0; i < lowNibbles.length; i++) {
-            for (int j = 0; j < highNibbles.length; j++) {
+    private static void buildExclusionConstraints(BitvectorFormulaManager bvm, BooleanFormulaManager boolm,
+            BitvectorFormula[] lowNibbles, BitvectorFormula[] highNibbles,
+            List<BitvectorFormula> literalVectors, BooleanFormula[][] equations, int vectorByteSize) {
+        for (int i = 0; i < 16; i++) {
+            for (int j = 0; j < 16; j++) {
                 if (equations[i][j] == null) {
-                    final int _i = i;
-                    final int _j = j;
-
-                    BitvectorFormula andResult = bitvectorManager.and(lowNibbles[_i], highNibbles[_j]);
+                    BitvectorFormula andResult = bvm.and(lowNibbles[i], highNibbles[j]);
                     BitvectorFormula compareValue = (vectorByteSize > 0)
-                            ? bitvectorManager.and(andResult, bitvectorManager.makeBitvector(8, vectorByteSize - 1))
+                            ? bvm.and(andResult, bvm.makeBitvector(8, vectorByteSize - 1))
                             : andResult;
-
-                    equations[i][j] = literalVectors
-                            .stream()
-                            .map(lit -> booleanManager.not(
-                                    bitvectorManager.equal(compareValue, lit)))
-                            .reduce(booleanManager.makeTrue(), booleanManager::and);
-
-
+                    equations[i][j] = literalVectors.stream()
+                            .map(lit -> boolm.not(bvm.equal(compareValue, lit)))
+                            .reduce(boolm.makeTrue(), boolm::and);
                     logger.debug("ex / eq[{},{}] {}", i, j, equations[i][j]);
-
                 }
             }
         }
+    }
 
-        for (BitvectorFormula bitvectorFormula : literalVectors) {
-            exclusions.add(bitvectorManager.greaterThan(bitvectorFormula, zeroVector, true));
+    private static List<BooleanFormula> buildLiteralExclusions(BitvectorFormulaManager bvm, BooleanFormulaManager boolm,
+            List<BitvectorFormula> literalVectors, List<Byte> usedLiterals, int vectorByteSize) {
+        BitvectorFormula zeroVector = bvm.makeBitvector(8, 0);
+        List<BitvectorFormula> usedVecs = usedLiterals.stream().map(l -> bvm.makeBitvector(8, l)).toList();
+        List<BooleanFormula> exclusions = Lists.newArrayList();
+        for (BitvectorFormula litVec : literalVectors) {
+            exclusions.add(bvm.greaterThan(litVec, zeroVector, true));
             if (vectorByteSize > 0) {
-                // Constrain literal bytes to [1, vectorByteSize-1] so vpermb cleanup LUT works
-                BitvectorFormula maxLiteral = bitvectorManager.makeBitvector(8, vectorByteSize);
-                exclusions.add(bitvectorManager.lessThan(bitvectorFormula, maxLiteral, false));
+                exclusions.add(bvm.lessThan(litVec, bvm.makeBitvector(8, vectorByteSize), false));
             }
-            for (BitvectorFormula usedLiteral : usedLiteralsVectors) {
-                exclusions.add(booleanManager.not(bitvectorManager.equal(bitvectorFormula, usedLiteral)));
+            for (BitvectorFormula used : usedVecs) {
+                exclusions.add(boolm.not(bvm.equal(litVec, used)));
             }
         }
+        return exclusions;
+    }
 
-        // solve
-
+    private AsciiFindMask solveAndExtract(BitvectorFormulaManager bvm,
+            BitvectorFormula[] lowNibbles, BitvectorFormula[] highNibbles,
+            List<BitvectorFormula> literalVectors, BooleanFormula[][] equations,
+            List<BooleanFormula> exclusions) throws InterruptedException, SolverException {
         try (ProverEnvironment prover = context.newProverEnvironment(ProverOptions.GENERATE_MODELS)) {
-            for (int i = 0; i < lowNibbles.length; i++) {
-                for (int j = 0; j < highNibbles.length; j++) {
-                    if (equations[i][j] != null)
-                        prover.addConstraint(equations[i][j]);
-                }
-            }
+            for (int i = 0; i < 16; i++)
+                for (int j = 0; j < 16; j++)
+                    if (equations[i][j] != null) prover.addConstraint(equations[i][j]);
+            for (var ex : exclusions) prover.addConstraint(ex);
+            prover.addConstraint(bvm.distinct(literalVectors));
 
-            for (var ex : exclusions) {
-                prover.addConstraint(ex);
-            }
-
-            prover.addConstraint(bitvectorManager.distinct(literalVectors));
-
-
-            boolean isUnsat = prover.isUnsat();
-            if (!isUnsat) {
-                Model model = prover.getModel();
-                for (var vec : literalVectors) {
-                    var litIdent = model.evaluate(vec);
-                    logger.debug("literal identifier {} : {}", vec, litIdent);
-                }
-
-                byte[] lowNibblesFound = new byte[lowNibbles.length];
-                byte[] highNibblesFound = new byte[highNibbles.length];
-
-                for (int j = 0; j < lowNibbles.length; j++) {
-                    lowNibblesFound[j] = (byte) Objects.requireNonNull(model.evaluate(lowNibbles[j])).intValue();
-                }
-                for (int j = 0; j < highNibbles.length; j++) {
-                    highNibblesFound[j] = (byte) Objects.requireNonNull(model.evaluate(highNibbles[j])).intValue();
-                }
-
-                Map<String, Byte> literalMap = literalVectors.stream()
-                        .collect(Collectors.toMap(BitvectorFormula::toString,
-                                v -> (byte) (Objects.requireNonNull(model.evaluate(v)).intValue())));
-
-                return new AsciiFindMask(lowNibblesFound, highNibblesFound, literalMap);
-
-            } else {
+            if (prover.isUnsat()) {
                 throw new IllegalStateException("Z3 solver returned unsatisfiable - no valid mask configuration found");
             }
 
-        }
+            Model model = prover.getModel();
+            for (var vec : literalVectors) {
+                logger.debug("literal identifier {} : {}", vec, model.evaluate(vec));
+            }
 
+            byte[] lowFound = new byte[16], highFound = new byte[16];
+            for (int j = 0; j < 16; j++) {
+                lowFound[j] = (byte) Objects.requireNonNull(model.evaluate(lowNibbles[j])).intValue();
+                highFound[j] = (byte) Objects.requireNonNull(model.evaluate(highNibbles[j])).intValue();
+            }
+
+            Map<String, Byte> literalMap = literalVectors.stream()
+                    .collect(Collectors.toMap(BitvectorFormula::toString,
+                            v -> (byte) (Objects.requireNonNull(model.evaluate(v)).intValue())));
+            return new AsciiFindMask(lowFound, highFound, literalMap);
+        }
     }
 
 

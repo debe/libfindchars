@@ -42,185 +42,25 @@ class FuzzRegexParityTest {
 
         for (int round = 0; round < ROUNDS; round++) {
             var rng = new Random(round);
+            var config = generateRoundConfig(rng, round);
+            if (config == null) continue;
 
-            // --- Pick random parameters within solver limits ---
-            int dataSize = 1 + rng.nextInt(50); // 1–50 MB
-            int dataSizeBytes = dataSize * 1024 * 1024;
-            int asciiGroupCount = 1 + rng.nextInt(4); // 1–4 groups
-            boolean includeRange = rng.nextBoolean();
-            int multiByteCount = rng.nextInt(MAX_MULTI_BYTE + 1); // 0–3
-            double asciiDensity = 0.05 + rng.nextDouble() * 0.25; // 5–30%
-            double multiDensity = 0.0001 + rng.nextDouble() * 0.005; // 0.01–0.5%
-
-            // --- Pick random ASCII characters (0x21–0x7E, distinct across all groups) ---
-            // Stay within MAX_ASCII_LITERALS to keep the nibble matrix solvable
-            int maxTotalAscii = 1 + rng.nextInt(MAX_ASCII_LITERALS); // 1–12
-            List<int[]> asciiGroups = new ArrayList<>();
-            List<String> groupNames = new ArrayList<>();
-            Set<Integer> usedAscii = new HashSet<>();
-
-            for (int g = 0; g < asciiGroupCount; g++) {
-                int remaining = maxTotalAscii - usedAscii.size();
-                if (remaining <= 0) break;
-                int charsInGroup = 1 + rng.nextInt(Math.min(6, remaining));
-                List<Integer> groupChars = new ArrayList<>();
-                for (int c = 0; c < charsInGroup; c++) {
-                    int ch = pickUnusedAscii(rng, usedAscii);
-                    if (ch == -1) break; // exhausted printable ASCII
-                    groupChars.add(ch);
-                }
-                if (groupChars.isEmpty()) continue;
-                asciiGroups.add(groupChars.stream().mapToInt(Integer::intValue).toArray());
-                groupNames.add("g" + g);
-            }
-
-            // --- Pick random multi-byte codepoints ---
-            List<Integer> multiByteCodepoints = new ArrayList<>();
-            List<String> multiByteNames = new ArrayList<>();
-            Set<Integer> usedCodepoints = new HashSet<>();
-            for (int m = 0; m < multiByteCount; m++) {
-                int cp = pickRandomMultiByte(rng, usedCodepoints);
-                if (cp == -1) break;
-                multiByteCodepoints.add(cp);
-                multiByteNames.add("mb" + m);
-            }
-
-            // --- Pick optional range (length 2–5, no overlap with codepoints groups) ---
-            byte rangeFrom = 0, rangeTo = 0;
-            String rangeName = "rng";
-            if (includeRange) {
-                int rangeLen = 2 + rng.nextInt(MAX_RANGE_LEN - 1); // 2–5
-                int rangeStart = pickRangeStart(rng, usedAscii, rangeLen);
-                if (rangeStart == -1) {
-                    includeRange = false;
-                } else {
-                    rangeFrom = (byte) rangeStart;
-                    rangeTo = (byte) (rangeStart + rangeLen - 1);
-                    for (int r = rangeStart; r <= rangeStart + rangeLen - 1; r++) {
-                        usedAscii.add(r);
-                    }
-                }
-            }
-
-            // Collect all target ASCII codepoints (for data generation)
-            Set<Integer> allTargetAscii = new HashSet<>(usedAscii);
-
-            // --- Build regex pattern ---
-            String regexPattern = buildRegexPattern(asciiGroups, multiByteCodepoints, includeRange, rangeFrom, rangeTo);
-            Pattern regex = Pattern.compile(regexPattern);
-
-            // --- Build SIMD engine ---
-            var builder = Utf8EngineBuilder.builder();
-            for (int g = 0; g < asciiGroups.size(); g++) {
-                builder.codepoints(groupNames.get(g), asciiGroups.get(g));
-            }
-            for (int m = 0; m < multiByteCodepoints.size(); m++) {
-                builder.codepoint(multiByteNames.get(m), multiByteCodepoints.get(m));
-            }
-            if (includeRange) {
-                builder.range(rangeName, rangeFrom, rangeTo);
-            }
-
-            Utf8EngineBuilder.Utf8BuildResult result;
-            try {
-                result = builder.build();
-            } catch (IllegalStateException e) {
-                // Z3 can't solve this random configuration — skip round
-                System.out.printf("Round %2d: skipped (unsolvable: %s)%n", round, e.getMessage());
+            var engineResult = buildEngine(config);
+            if (engineResult == null) {
+                System.out.printf("Round %2d: skipped (unsolvable)%n", round);
                 continue;
             }
 
-            var engine = result.engine();
-            var literals = result.literals();
+            printRoundSummary(round, config);
 
-            // --- Build group membership map for literal verification ---
-            Map<String, Set<Integer>> groupMembers = new HashMap<>();
-            for (int g = 0; g < asciiGroups.size(); g++) {
-                Set<Integer> members = new HashSet<>();
-                for (int ch : asciiGroups.get(g)) members.add(ch);
-                groupMembers.put(groupNames.get(g), members);
-            }
-            for (int m = 0; m < multiByteCodepoints.size(); m++) {
-                groupMembers.put(multiByteNames.get(m), Set.of(multiByteCodepoints.get(m)));
-            }
-            if (includeRange) {
-                Set<Integer> rangeMembers = new HashSet<>();
-                for (int r = (rangeFrom & 0xFF); r <= (rangeTo & 0xFF); r++) {
-                    rangeMembers.add(r);
-                }
-                groupMembers.put(rangeName, rangeMembers);
-            }
+            int[] regexPositions = collectRegexPositions(config);
+            int[] enginePositions = collectEnginePositions(engineResult, config.data);
 
-            // --- Generate random data (pad with zeros for vector alignment) ---
-            int[] allAsciiTargets = allTargetAscii.stream().mapToInt(Integer::intValue).toArray();
-            byte[] rawData = generateData(rng, dataSizeBytes, allAsciiTargets, multiByteCodepoints,
-                    asciiDensity, multiDensity);
-            // Pad to next 64-byte boundary + 64 so vector reads don't go OOB
-            int paddedLen = ((rawData.length + 63) & ~63) + 64;
-            byte[] data = Arrays.copyOf(rawData, paddedLen);
-
-            // Only decode the actual data portion for regex matching
-            String text = new String(rawData, UTF_8);
-
-            System.out.printf("Round %2d: seed=%d, size=%dMB, asciiGroups=%d(%d chars), multiByte=%d, range=%s, density=%.1f%%/%.2f%%%n",
-                    round, round, dataSize, asciiGroups.size(),
-                    allTargetAscii.size(), multiByteCodepoints.size(),
-                    includeRange ? String.format("0x%02x-0x%02x", rangeFrom & 0xFF, rangeTo & 0xFF) : "none",
-                    asciiDensity * 100, multiDensity * 100);
-
-            // --- Regex: collect sorted byte positions ---
-            int[] charToBytePos = buildCharToByteMap(text);
-            var matcher = regex.matcher(text);
-            List<Integer> regexPosList = new ArrayList<>();
-            while (matcher.find()) {
-                regexPosList.add(charToBytePos[matcher.start()]);
-            }
-            int[] regexPositions = regexPosList.stream().mapToInt(Integer::intValue).toArray();
-            Arrays.sort(regexPositions);
-
-            // --- Engine: collect sorted byte positions ---
-            var storage = new MatchStorage(Math.max(data.length / 4, regexPositions.length + 1024), 32);
-            var view = engine.find(MemorySegment.ofArray(data), storage);
-
-            int engineCount = view.size();
-            int[] enginePositions = new int[engineCount];
-            for (int i = 0; i < engineCount; i++) {
-                enginePositions[i] = view.getPositionAt(storage, i);
-            }
-            Arrays.sort(enginePositions);
-
-            System.out.printf("  Matches: regex=%d, engine=%d%n", regexPositions.length, engineCount);
-
-            // --- Assert positions match ---
+            System.out.printf("  Matches: regex=%d, engine=%d%n", regexPositions.length, enginePositions.length);
             assertArrayEquals(regexPositions, enginePositions,
                     "Round " + round + ": engine byte positions must exactly match regex");
 
-            // --- Verify each match's codepoint belongs to a configured group ---
-            // Build set of all target codepoints across all groups
-            Set<Integer> allTargetCodepoints = new HashSet<>();
-            for (var members : groupMembers.values()) allTargetCodepoints.addAll(members);
-
-            for (int i = 0; i < engineCount; i++) {
-                int pos = view.getPositionAt(storage, i);
-                byte litByte = view.getLiteralAt(storage, i);
-                int codepointAtPos = codepointFromUtf8(data, pos);
-
-                // Primary check: codepoint at this position must be a configured target
-                assertTrue(allTargetCodepoints.contains(codepointAtPos),
-                        "Round %d: codepoint U+%04X at byte %d is not in any configured group"
-                                .formatted(round, codepointAtPos, pos));
-
-                // Secondary check: if literal resolves to a group, verify membership
-                String groupName = literalGroupName(litByte, literals);
-                if (groupName != null) {
-                    Set<Integer> expectedChars = groupMembers.get(groupName);
-                    assertNotNull(expectedChars, "Round " + round + ": unknown group " + groupName);
-                    assertTrue(expectedChars.contains(codepointAtPos),
-                            "Round %d: codepoint U+%04X at byte %d not in group '%s' (expected %s)"
-                                    .formatted(round, codepointAtPos, pos, groupName, expectedChars));
-                }
-            }
-
+            verifyLiteralMembership(round, engineResult, config);
             successCount++;
         }
 
@@ -228,6 +68,196 @@ class FuzzRegexParityTest {
                 successCount, ROUNDS, ROUNDS - successCount);
         assertTrue(successCount >= ROUNDS / 2,
                 "At least half the rounds must succeed, but only " + successCount + "/" + ROUNDS + " did");
+    }
+
+    private record RoundConfig(
+            int round, int dataSize,
+            List<int[]> asciiGroups, List<String> groupNames,
+            List<Integer> multiByteCodepoints, List<String> multiByteNames,
+            boolean includeRange, byte rangeFrom, byte rangeTo,
+            Set<Integer> allTargetAscii,
+            double asciiDensity, double multiDensity,
+            Pattern regex, Map<String, Set<Integer>> groupMembers,
+            byte[] data, String text) {}
+
+    private record EngineResult(
+            Utf8EngineBuilder.Utf8BuildResult buildResult,
+            org.knownhosts.libfindchars.api.FindEngine engine,
+            Map<String, Byte> literals) {}
+
+    private RoundConfig generateRoundConfig(Random rng, int round) {
+        int dataSize = 1 + rng.nextInt(50);
+        int dataSizeBytes = dataSize * 1024 * 1024;
+        int asciiGroupCount = 1 + rng.nextInt(4);
+        boolean includeRange = rng.nextBoolean();
+        int multiByteCount = rng.nextInt(MAX_MULTI_BYTE + 1);
+        double asciiDensity = 0.05 + rng.nextDouble() * 0.25;
+        double multiDensity = 0.0001 + rng.nextDouble() * 0.005;
+
+        int maxTotalAscii = 1 + rng.nextInt(MAX_ASCII_LITERALS);
+        List<int[]> asciiGroups = new ArrayList<>();
+        List<String> groupNames = new ArrayList<>();
+        Set<Integer> usedAscii = new HashSet<>();
+
+        for (int g = 0; g < asciiGroupCount; g++) {
+            int remaining = maxTotalAscii - usedAscii.size();
+            if (remaining <= 0) break;
+            int charsInGroup = 1 + rng.nextInt(Math.min(6, remaining));
+            List<Integer> groupChars = new ArrayList<>();
+            for (int c = 0; c < charsInGroup; c++) {
+                int ch = pickUnusedAscii(rng, usedAscii);
+                if (ch == -1) break;
+                groupChars.add(ch);
+            }
+            if (groupChars.isEmpty()) continue;
+            asciiGroups.add(groupChars.stream().mapToInt(Integer::intValue).toArray());
+            groupNames.add("g" + g);
+        }
+
+        List<Integer> multiByteCodepoints = new ArrayList<>();
+        List<String> multiByteNames = new ArrayList<>();
+        Set<Integer> usedCodepoints = new HashSet<>();
+        for (int m = 0; m < multiByteCount; m++) {
+            int cp = pickRandomMultiByte(rng, usedCodepoints);
+            if (cp == -1) break;
+            multiByteCodepoints.add(cp);
+            multiByteNames.add("mb" + m);
+        }
+
+        byte rangeFrom = 0, rangeTo = 0;
+        if (includeRange) {
+            int rangeLen = 2 + rng.nextInt(MAX_RANGE_LEN - 1);
+            int rangeStart = pickRangeStart(rng, usedAscii, rangeLen);
+            if (rangeStart == -1) {
+                includeRange = false;
+            } else {
+                rangeFrom = (byte) rangeStart;
+                rangeTo = (byte) (rangeStart + rangeLen - 1);
+                for (int r = rangeStart; r <= rangeStart + rangeLen - 1; r++) {
+                    usedAscii.add(r);
+                }
+            }
+        }
+
+        Set<Integer> allTargetAscii = new HashSet<>(usedAscii);
+        String regexPattern = buildRegexPattern(asciiGroups, multiByteCodepoints, includeRange, rangeFrom, rangeTo);
+        Pattern regex = Pattern.compile(regexPattern);
+
+        Map<String, Set<Integer>> groupMembers = buildGroupMembers(
+                asciiGroups, groupNames, multiByteCodepoints, multiByteNames,
+                includeRange, rangeFrom, rangeTo);
+
+        int[] allAsciiTargets = allTargetAscii.stream().mapToInt(Integer::intValue).toArray();
+        byte[] rawData = generateData(rng, dataSizeBytes, allAsciiTargets, multiByteCodepoints,
+                asciiDensity, multiDensity);
+        int paddedLen = ((rawData.length + 63) & ~63) + 64;
+        byte[] data = Arrays.copyOf(rawData, paddedLen);
+        String text = new String(rawData, UTF_8);
+
+        return new RoundConfig(round, dataSize, asciiGroups, groupNames,
+                multiByteCodepoints, multiByteNames, includeRange, rangeFrom, rangeTo,
+                allTargetAscii, asciiDensity, multiDensity, regex, groupMembers, data, text);
+    }
+
+    private static Map<String, Set<Integer>> buildGroupMembers(
+            List<int[]> asciiGroups, List<String> groupNames,
+            List<Integer> multiByteCodepoints, List<String> multiByteNames,
+            boolean includeRange, byte rangeFrom, byte rangeTo) {
+        Map<String, Set<Integer>> groupMembers = new HashMap<>();
+        for (int g = 0; g < asciiGroups.size(); g++) {
+            Set<Integer> members = new HashSet<>();
+            for (int ch : asciiGroups.get(g)) members.add(ch);
+            groupMembers.put(groupNames.get(g), members);
+        }
+        for (int m = 0; m < multiByteCodepoints.size(); m++) {
+            groupMembers.put(multiByteNames.get(m), Set.of(multiByteCodepoints.get(m)));
+        }
+        if (includeRange) {
+            Set<Integer> rangeMembers = new HashSet<>();
+            for (int r = (rangeFrom & 0xFF); r <= (rangeTo & 0xFF); r++) {
+                rangeMembers.add(r);
+            }
+            groupMembers.put("rng", rangeMembers);
+        }
+        return groupMembers;
+    }
+
+    private static EngineResult buildEngine(RoundConfig config) {
+        var builder = Utf8EngineBuilder.builder();
+        for (int g = 0; g < config.asciiGroups.size(); g++) {
+            builder.codepoints(config.groupNames.get(g), config.asciiGroups.get(g));
+        }
+        for (int m = 0; m < config.multiByteCodepoints.size(); m++) {
+            builder.codepoint(config.multiByteNames.get(m), config.multiByteCodepoints.get(m));
+        }
+        if (config.includeRange) {
+            builder.range("rng", config.rangeFrom, config.rangeTo);
+        }
+        try {
+            var result = builder.build();
+            return new EngineResult(result, result.engine(), result.literals());
+        } catch (IllegalStateException e) {
+            return null;
+        }
+    }
+
+    private static void printRoundSummary(int round, RoundConfig config) {
+        System.out.printf("Round %2d: seed=%d, size=%dMB, asciiGroups=%d(%d chars), multiByte=%d, range=%s, density=%.1f%%/%.2f%%%n",
+                round, round, config.dataSize, config.asciiGroups.size(),
+                config.allTargetAscii.size(), config.multiByteCodepoints.size(),
+                config.includeRange ? String.format("0x%02x-0x%02x", config.rangeFrom & 0xFF, config.rangeTo & 0xFF) : "none",
+                config.asciiDensity * 100, config.multiDensity * 100);
+    }
+
+    private static int[] collectRegexPositions(RoundConfig config) {
+        int[] charToBytePos = buildCharToByteMap(config.text);
+        var matcher = config.regex.matcher(config.text);
+        List<Integer> regexPosList = new ArrayList<>();
+        while (matcher.find()) {
+            regexPosList.add(charToBytePos[matcher.start()]);
+        }
+        int[] positions = regexPosList.stream().mapToInt(Integer::intValue).toArray();
+        Arrays.sort(positions);
+        return positions;
+    }
+
+    private static int[] collectEnginePositions(EngineResult engineResult, byte[] data) {
+        var storage = new MatchStorage(data.length, 32);
+        var view = engineResult.engine.find(MemorySegment.ofArray(data), storage);
+        int count = view.size();
+        int[] positions = new int[count];
+        for (int i = 0; i < count; i++) {
+            positions[i] = (int) view.getPositionAt(storage, i);
+        }
+        Arrays.sort(positions);
+        return positions;
+    }
+
+    private static void verifyLiteralMembership(int round, EngineResult engineResult, RoundConfig config) {
+        var storage = new MatchStorage(config.data.length, 32);
+        var view = engineResult.engine.find(MemorySegment.ofArray(config.data), storage);
+
+        Set<Integer> allTargetCodepoints = new HashSet<>();
+        for (var members : config.groupMembers.values()) allTargetCodepoints.addAll(members);
+
+        for (int i = 0; i < view.size(); i++) {
+            int pos = (int) view.getPositionAt(storage, i);
+            byte litByte = view.getLiteralAt(storage, i);
+            int codepointAtPos = codepointFromUtf8(config.data, pos);
+
+            assertTrue(allTargetCodepoints.contains(codepointAtPos),
+                    "Round %d: codepoint U+%04X at byte %d is not in any configured group"
+                            .formatted(round, codepointAtPos, pos));
+
+            String groupName = literalGroupName(litByte, engineResult.literals);
+            if (groupName != null) {
+                Set<Integer> expectedChars = config.groupMembers.get(groupName);
+                assertNotNull(expectedChars, "Round " + round + ": unknown group " + groupName);
+                assertTrue(expectedChars.contains(codepointAtPos),
+                        "Round %d: codepoint U+%04X at byte %d not in group '%s' (expected %s)"
+                                .formatted(round, codepointAtPos, pos, groupName, expectedChars));
+            }
+        }
     }
 
     // --- Helper methods ---

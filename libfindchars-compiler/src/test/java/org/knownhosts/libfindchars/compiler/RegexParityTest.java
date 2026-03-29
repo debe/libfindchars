@@ -81,10 +81,11 @@ class RegexParityTest {
     /**
      * Verify that the literal group name is correct for the byte(s) at the given position.
      */
-    private static void assertLiteralMatchesChar(byte[] data, int bytePos, String groupName) {
+    private static void assertLiteralMatchesChar(byte[] data, long bytePos, String groupName) {
         assertNotNull(groupName, "No literal group for match at byte position " + bytePos);
+        int p = (int) bytePos;
 
-        int b = data[bytePos] & 0xFF;
+        int b = data[p] & 0xFF;
 
         switch (groupName) {
             case "whitespaces" -> assertTrue(
@@ -104,28 +105,28 @@ class RegexParityTest {
             case "pound" -> {
                 // £ = U+00A3 = 0xC2 0xA3
                 assertEquals(0xC2, b, "pound lead byte mismatch at pos %d".formatted(bytePos));
-                assertEquals(0xA3, data[bytePos + 1] & 0xFF, "pound trail byte mismatch at pos %d".formatted(bytePos));
+                assertEquals(0xA3, data[p + 1] & 0xFF, "pound trail byte mismatch at pos %d".formatted(bytePos));
             }
             case "oe" -> {
                 // œ = U+0153 = 0xC5 0x93
                 assertEquals(0xC5, b, "oe lead byte mismatch at pos %d".formatted(bytePos));
-                assertEquals(0x93, data[bytePos + 1] & 0xFF, "oe trail byte mismatch at pos %d".formatted(bytePos));
+                assertEquals(0x93, data[p + 1] & 0xFF, "oe trail byte mismatch at pos %d".formatted(bytePos));
             }
             case "ocirc" -> {
                 // ô = U+00F4 = 0xC3 0xB4
                 assertEquals(0xC3, b, "ocirc lead byte mismatch at pos %d".formatted(bytePos));
-                assertEquals(0xB4, data[bytePos + 1] & 0xFF, "ocirc trail byte mismatch at pos %d".formatted(bytePos));
+                assertEquals(0xB4, data[p + 1] & 0xFF, "ocirc trail byte mismatch at pos %d".formatted(bytePos));
             }
             case "eacute" -> {
                 // é = U+00E9 = 0xC3 0xA9
                 assertEquals(0xC3, b, "eacute lead byte mismatch at pos %d".formatted(bytePos));
-                assertEquals(0xA9, data[bytePos + 1] & 0xFF, "eacute trail byte mismatch at pos %d".formatted(bytePos));
+                assertEquals(0xA9, data[p + 1] & 0xFF, "eacute trail byte mismatch at pos %d".formatted(bytePos));
             }
             case "trademark" -> {
                 // ™ = U+2122 = 0xE2 0x84 0xA2
                 assertEquals(0xE2, b, "trademark lead byte mismatch at pos %d".formatted(bytePos));
-                assertEquals(0x84, data[bytePos + 1] & 0xFF, "trademark byte 2 mismatch at pos %d".formatted(bytePos));
-                assertEquals(0xA2, data[bytePos + 2] & 0xFF, "trademark byte 3 mismatch at pos %d".formatted(bytePos));
+                assertEquals(0x84, data[p + 1] & 0xFF, "trademark byte 2 mismatch at pos %d".formatted(bytePos));
+                assertEquals(0xA2, data[p + 2] & 0xFF, "trademark byte 3 mismatch at pos %d".formatted(bytePos));
             }
             default -> fail("Unknown literal group: " + groupName + " at pos " + bytePos);
         }
@@ -169,7 +170,7 @@ class RegexParityTest {
         int engineCount = view.size();
         int[] enginePositions = new int[engineCount];
         for (int i = 0; i < engineCount; i++) {
-            enginePositions[i] = view.getPositionAt(storage, i);
+            enginePositions[i] = (int) view.getPositionAt(storage, i);
         }
         Arrays.sort(enginePositions);
 
@@ -183,7 +184,7 @@ class RegexParityTest {
 
         // Verify each engine match has a correct literal assignment
         for (int i = 0; i < engineCount; i++) {
-            int pos = view.getPositionAt(storage, i);
+            long pos = view.getPositionAt(storage, i);
             byte litByte = view.getLiteralAt(storage, i);
             String groupName = literalGroupName(litByte, literals);
             assertLiteralMatchesChar(fileBytes, pos, groupName);
@@ -238,7 +239,7 @@ class RegexParityTest {
         int engineCount = view.size();
         int[] enginePositions = new int[engineCount];
         for (int j = 0; j < engineCount; j++) {
-            enginePositions[j] = view.getPositionAt(storage, j);
+            enginePositions[j] = (int) view.getPositionAt(storage, j);
         }
         Arrays.sort(enginePositions);
 
@@ -250,7 +251,7 @@ class RegexParityTest {
 
         // Verify literal assignments
         for (int j = 0; j < engineCount; j++) {
-            int pos = view.getPositionAt(storage, j);
+            long pos = view.getPositionAt(storage, j);
             byte litByte = view.getLiteralAt(storage, j);
             String groupName = literalGroupName(litByte, literals);
             assertLiteralMatchesChar(data, pos, groupName);

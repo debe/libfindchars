@@ -184,35 +184,35 @@ public class Utf8Benchmark {
     }
 
     @CompilerControl(CompilerControl.Mode.DONT_INLINE)
-    private int findAscii() {
+    private long findAscii() {
         var view = asciiEngine.find(dataSegment, asciiMatchStorage);
         return asciiMatchStorage.getPositionsBuffer()[view.size() - 1];
     }
 
     @CompilerControl(CompilerControl.Mode.DONT_INLINE)
-    private int findUtf8() {
+    private long findUtf8() {
         var view = utf8Engine.find(dataSegment, utf8MatchStorage);
         return utf8MatchStorage.getPositionsBuffer()[view.size() - 1];
     }
 
     @CompilerControl(CompilerControl.Mode.DONT_INLINE)
-    private int findUtf8C2Jit() {
+    private long findUtf8C2Jit() {
         var view = c2jitUtf8Engine.find(dataSegment, c2jitUtf8Storage);
         return c2jitUtf8Storage.getPositionsBuffer()[view.size() - 1];
     }
 
     @Benchmark
-    public int simdAsciiCompiled() {
+    public long simdAsciiCompiled() {
         return findAscii();
     }
 
     @Benchmark
-    public int simdUtf8Compiled() {
+    public long simdUtf8Compiled() {
         return findUtf8();
     }
 
     @Benchmark
-    public int simdUtf8C2Jit() {
+    public long simdUtf8C2Jit() {
         return findUtf8C2Jit();
     }
 

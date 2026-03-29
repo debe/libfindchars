@@ -231,6 +231,7 @@
 	<modules>
 		<module>libfindchars-api</module>
 		<module>libfindchars-compiler</module>
+		<module>libfindchars-csv</module>
 		<module>libfindchars-examples</module>
 		<module>libfindchars-bench</module>
 	</modules>

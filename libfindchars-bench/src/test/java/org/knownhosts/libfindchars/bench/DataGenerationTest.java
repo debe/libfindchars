@@ -48,22 +48,27 @@ class DataGenerationTest {
 
         assertEquals(SIZE, data.length, "Output size must match requested size");
 
-        // --- Byte frequency histogram ---
         int[] histogram = new int[256];
         for (byte b : data) histogram[b & 0xFF]++;
 
-        // No bytes above 0x7F should appear unless multi-byte sequences are present
+        assertNoHighBytesInAsciiOnly(histogram, multiByteCount, emitMbFiller);
+        assertFillerUniformity(histogram, asciiChars);
+        assertAsciiDensity(histogram, asciiChars, asciiDensity);
+        assertShannonEntropy(histogram, asciiDensity);
+        assertLowAutocorrelation(data, multiByteCount, emitMbFiller);
+        assertValidUtf8(data);
+    }
+
+    private static void assertNoHighBytesInAsciiOnly(int[] histogram, int multiByteCount, boolean emitMbFiller) {
         if (multiByteCount == 0 && !emitMbFiller) {
             for (int i = 0x80; i < 256; i++) {
                 assertEquals(0, histogram[i],
                         "Byte 0x" + Integer.toHexString(i) + " should not appear in ASCII-only data");
             }
         }
+    }
 
-        // --- Chi-squared goodness-of-fit for ASCII filler bytes ---
-        // Test that filler bytes are approximately uniformly distributed among themselves.
-        // We derive expected count from the actual total filler count (not from density params)
-        // because multi-byte sequences consume multiple byte positions per roll.
+    private static void assertFillerUniformity(int[] histogram, int[] asciiChars) {
         Set<Integer> targetSet = new HashSet<>();
         for (int t : asciiChars) targetSet.add(t);
         List<Integer> fillerBytes = new ArrayList<>();
@@ -79,23 +84,21 @@ class DataGenerationTest {
                 double diff = histogram[b] - expectedPerFiller;
                 chiSquared += (diff * diff) / expectedPerFiller;
             }
-            int df = fillerBytes.size() - 1;
-            // Chi-squared critical value at p=0.001 for df~120 is ~170
-            // Use a generous threshold: 2*df as rough upper bound
-            double threshold = 2.0 * df;
+            double threshold = 2.0 * (fillerBytes.size() - 1);
             assertTrue(chiSquared < threshold,
-                    "Chi-squared too high (" + chiSquared + " > " + threshold +
-                            "), filler distribution is not uniform enough (df=" + df + ")");
+                    "Chi-squared too high (" + chiSquared + " > " + threshold + "), filler not uniform enough");
         }
+    }
 
-        // --- Actual vs expected density for ASCII targets ---
+    private static void assertAsciiDensity(int[] histogram, int[] asciiChars, double asciiDensity) {
         int asciiTargetCount = 0;
         for (int t : asciiChars) asciiTargetCount += histogram[t];
-        double actualAsciiDensity = (double) asciiTargetCount / SIZE;
-        assertEquals(asciiDensity, actualAsciiDensity, 0.01,
+        double actualDensity = (double) asciiTargetCount / SIZE;
+        assertEquals(asciiDensity, actualDensity, 0.01,
                 "ASCII target density should be within ±1% of configured value");
+    }
 
-        // --- Shannon entropy ---
+    private static void assertShannonEntropy(int[] histogram, double asciiDensity) {
         double entropy = 0;
         for (int count : histogram) {
             if (count > 0) {
@@ -103,14 +106,12 @@ class DataGenerationTest {
                 entropy -= p * (Math.log(p) / Math.log(2));
             }
         }
-        // For high density configs (50% to 8 targets), theoretical max is ~5.9
-        double entropyThreshold = asciiDensity >= 0.4 ? 5.5 : 6.0;
-        assertTrue(entropy > entropyThreshold,
-                "Shannon entropy should be > " + entropyThreshold + " bits/byte, was " + entropy);
+        double threshold = asciiDensity >= 0.4 ? 5.5 : 6.0;
+        assertTrue(entropy > threshold,
+                "Shannon entropy should be > " + threshold + " bits/byte, was " + entropy);
+    }
 
-        // --- Autocorrelation at lag 1 ---
-        // Multi-byte UTF-8 sequences inherently produce correlated adjacent bytes
-        // (continuation bytes 0x80-0xBF follow lead bytes), so relax threshold for MB configs.
+    private static void assertLowAutocorrelation(byte[] data, int multiByteCount, boolean emitMbFiller) {
         double mean = 0;
         for (byte b : data) mean += (b & 0xFF);
         mean /= data.length;
@@ -128,12 +129,9 @@ class DataGenerationTest {
         }
         autoCorr /= (data.length - 1) * variance;
 
-        double autoCorrThreshold = (multiByteCount > 0 || emitMbFiller) ? 0.30 : 0.01;
-        assertTrue(Math.abs(autoCorr) < autoCorrThreshold,
-                "Autocorrelation at lag 1 should be < " + autoCorrThreshold + ", was " + autoCorr);
-
-        // --- Valid UTF-8 ---
-        assertValidUtf8(data);
+        double threshold = (multiByteCount > 0 || emitMbFiller) ? 0.30 : 0.01;
+        assertTrue(Math.abs(autoCorr) < threshold,
+                "Autocorrelation at lag 1 should be < " + threshold + ", was " + autoCorr);
     }
 
     @Test

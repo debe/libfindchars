@@ -45,7 +45,7 @@ class Utf8EngineTest {
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
             Assertions.assertEquals(wsLiteral, view.getLiteralAt(matchStorage, i));
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
         }
 
         Assertions.assertTrue(positions.contains(5), "Should find \\t at 5");
@@ -77,7 +77,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
             Assertions.assertEquals(eLiteral, view.getLiteralAt(matchStorage, i));
         }
 
@@ -165,7 +165,7 @@ class Utf8EngineTest {
 
         var posLitPairs = new ArrayList<int[]>();
         for (int i = 0; i < view.size(); i++) {
-            posLitPairs.add(new int[]{view.getPositionAt(matchStorage, i), view.getLiteralAt(matchStorage, i)});
+            posLitPairs.add(new int[]{(int) view.getPositionAt(matchStorage, i), view.getLiteralAt(matchStorage, i)});
         }
         var positions = posLitPairs.stream().map(p -> p[0]).toList();
 
@@ -207,7 +207,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
         }
 
         Assertions.assertTrue(positions.contains(pos),
@@ -257,7 +257,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
         }
 
         Assertions.assertFalse(positions.contains(10), "'×' [C3,97] must NOT match");
@@ -313,7 +313,7 @@ class Utf8EngineTest {
         var positions = new ArrayList<Integer>();
         var literals = new ArrayList<Byte>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
             literals.add(view.getLiteralAt(matchStorage, i));
         }
 
@@ -354,7 +354,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
         }
 
         Assertions.assertEquals(3, view.size(), "Should find all 3 chars");
@@ -387,7 +387,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
         }
 
         Assertions.assertEquals(2, view.size(), "Should find both 3-byte chars");
@@ -427,7 +427,7 @@ class Utf8EngineTest {
         var positions = new ArrayList<Integer>();
         var lits = new ArrayList<Byte>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
             lits.add(view.getLiteralAt(matchStorage, i));
         }
 
@@ -459,7 +459,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
             Assertions.assertEquals(eLit, view.getLiteralAt(matchStorage, i));
         }
 
@@ -487,7 +487,7 @@ class Utf8EngineTest {
 
         var positions = new ArrayList<Integer>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
         }
 
         Assertions.assertTrue(positions.contains(bufLen - 2),
@@ -519,7 +519,7 @@ class Utf8EngineTest {
         var positions = new ArrayList<Integer>();
         var lits = new ArrayList<Byte>();
         for (int i = 0; i < view.size(); i++) {
-            positions.add(view.getPositionAt(matchStorage, i));
+            positions.add((int) view.getPositionAt(matchStorage, i));
             lits.add(view.getLiteralAt(matchStorage, i));
         }
 

@@ -20,6 +20,16 @@
 		  <version>${project.version}</version>
 	  </dependency>
 	  <dependency>
+		  <groupId>org.knownhosts</groupId>
+		  <artifactId>libfindchars-csv</artifactId>
+		  <version>${project.version}</version>
+	  </dependency>
+	  <dependency>
+		  <groupId>de.siegmar</groupId>
+		  <artifactId>fastcsv</artifactId>
+		  <version>3.6.0</version>
+	  </dependency>
+	  <dependency>
 		  <groupId>org.junit.jupiter</groupId>
 		  <artifactId>junit-jupiter-params</artifactId>
 		  <version>5.10.1</version>

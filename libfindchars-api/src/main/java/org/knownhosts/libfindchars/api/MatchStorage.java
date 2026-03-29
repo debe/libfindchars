@@ -5,7 +5,7 @@ import java.util.Arrays;
 /**
  * Auto-growing dual-buffer storage for match results.
  *
- * <p>Holds parallel arrays of match positions ({@code int[]}) and literal
+ * <p>Holds parallel arrays of match positions ({@code long[]}) and literal
  * identifiers ({@code byte[]}).  The engine writes into these buffers during
  * a {@link FindEngine#find} call, and the returned {@link MatchView} reads
  * them back.  A single instance can be reused across calls &mdash; the engine
@@ -13,7 +13,7 @@ import java.util.Arrays;
  */
 public final class MatchStorage {
 
-    private int[] positions;
+    private long[] positions;
 
     private byte[] literals;
 
@@ -25,7 +25,7 @@ public final class MatchStorage {
      *                         avoid growing on every vector iteration
      */
     public MatchStorage(int expectedElements, int reserve) {
-        this.positions = new int[expectedElements + reserve];
+        this.positions = new long[expectedElements + reserve];
         this.literals = new byte[expectedElements + reserve];
         this.reserve = reserve;
     }
@@ -59,7 +59,7 @@ public final class MatchStorage {
         return literals;
     }
 
-    public int[] getPositionsBuffer() {
+    public long[] getPositionsBuffer() {
         return positions;
     }
 

@@ -25,9 +25,9 @@ public final class MatchView {
      *
      * @param autoTape the storage that was passed to {@link FindEngine#find}
      * @param index    match index, {@code 0 <= index < size()}
-     * @return byte position of the matched character in the scanned data
+     * @return byte offset of the matched character in the scanned data
      */
-    public int getPositionAt(MatchStorage autoTape, int index) {
+    public long getPositionAt(MatchStorage autoTape, int index) {
         return autoTape.getPositionsBuffer()[index];
     }
 

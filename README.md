@@ -96,7 +96,7 @@ try (Arena arena = Arena.ofConfined();
 
     for (int i = 0; i < match.size(); i++) {
         byte lit = match.getLiteralAt(matchStorage, i);
-        int pos = match.getPositionAt(matchStorage, i);
+        long pos = match.getPositionAt(matchStorage, i);
 
         if (lit == STAR) {
             System.out.println("* at: " + pos);
@@ -109,13 +109,85 @@ try (Arena arena = Arena.ofConfined();
 }
 ```
 
+## CSV Parser
+
+`libfindchars-csv` is a SIMD-accelerated CSV parser built on top of the detection engine. It reaches **~1.8 GB/s** scan throughput on a single core.
+
+```xml
+<dependency>
+    <groupId>org.knownhosts</groupId>
+    <artifactId>libfindchars-csv</artifactId>
+    <version>0.4.0-jdk25-preview</version>
+</dependency>
+```
+
+```java
+var parser = CsvParser.builder()
+        .delimiter(',')
+        .quote('"')
+        .hasHeader(true)
+        .build();
+
+try (var arena = Arena.ofConfined()) {
+    var result = parser.parse(Path.of("data.csv"), arena);
+    for (int i = 0; i < result.rowCount(); i++) {
+        System.out.println(result.row(i).get(0)); // zero-copy until String materialization
+    }
+}
+```
+
+Custom delimiters and quote characters:
+
+```java
+// Tab-delimited with single-quote quoting
+var tsvParser = CsvParser.builder()
+        .delimiter('\t')
+        .quote('\'')
+        .build();
+
+// Pipe-delimited
+var pipeParser = CsvParser.builder()
+        .delimiter('|')
+        .build();
+```
+
+Two-phase architecture:
+1. **SIMD scan + filter**: vectorized detection of `,` `"` `\n` `\r`, then a `CsvQuoteFilter` zeros out structural characters inside quoted regions using parallel prefix XOR.
+2. **Match walker**: linear scan over filtered matches — every comma is a field boundary, every newline is a row boundary. No state machine needed.
+
+The API offers two access levels: `scan()` returns a zero-allocation `CsvMatchView` token stream, and `parse()` returns a `CsvResult` with pre-computed row/field boundaries backed by zero-copy `MemorySegment` offsets.
+
+## Chunk Filter / VPA Framework
+
+The engine supports stateful per-chunk filtering via the `chunkFilter()` builder API. A chunk filter runs between SIMD detection and position decode, transforming the accumulator ByteVector to zero out lanes that should not be emitted as matches.
+
+```java
+var result = Utf8EngineBuilder.builder()
+        .codepoints("quote", '"')
+        .codepoints("delim", ',')
+        .codepoints("lf", '\n')
+        .chunkFilter(MyFilter.class, "quote", "delim", "lf")
+        .build();
+```
+
+The filter class must provide an `@Inline public static ByteVector apply(...)` method matching the `ChunkFilter` signature. The engine provides:
+- **`state`** — mutable `long[8]`, reset per `find()` call, for cross-chunk carry (quote toggles, depth counters)
+- **`scratchpad`** — mutable `byte[vectorByteSize]`, engine-owned working memory
+- **`literals`** — immutable `ByteVector[]` of pre-broadcast literal vectors, indexed by binding order
+
+`VpaKernel` provides reusable vector primitives for filter implementations:
+- `prefixXor(v, zero, sp)` — parallel prefix XOR (toggle state: CSV quotes, string literals)
+- `prefixSum(v, zero, sp)` — parallel prefix SUM (depth tracking: bracket nesting, XML depth)
+
+Both use the Hillis-Steele pattern in O(log₂ V) steps, staying entirely in the ByteVector domain.
+
 ## Solver limits
 
 The Z3-based compiler has two constraints that limit how many characters can be classified:
 
-**Nibble matrix (per shuffle group):** Each group of ASCII literals is solved via a 16×16 lookup table indexed by the low and high nibble of each byte. Characters sharing a nibble row compete for the same table entries. In practice, a single shuffle group reliably solves **up to ~12 ASCII literals**. If Z3 finds no solution, the compiler auto-splits the group in half and solves each independently, extending the practical limit to **~20–24 ASCII literals per round**.
+**Nibble matrix (per shuffle group):** Each group of ASCII literals is solved via a 16×16 lookup table indexed by the low and high nibble of each byte. Characters sharing a nibble row compete for the same table entries. In practice, a single shuffle group reliably solves **up to ~12 ASCII literals**. If Z3 finds no solution, the compiler recursively auto-splits the group in half until each subgroup is solvable. On AVX-512 (64-byte vectors) this typically means 1–2 groups; on ARM NEON (16-byte vectors) the tighter literal namespace may require 3–6 groups per round.
 
-**Literal namespace (whole engine):** Every literal — ASCII groups, multi-byte codepoints, and range operations — gets a unique byte ID in the range `[1, vectorByteSize-1]`. With 64-byte vectors (AVX-512 / `SPECIES_512`) this means **at most 63 distinct literals** across the entire engine. Multi-byte codepoints reuse IDs across rounds (one per UTF-8 byte), so they cost 1 literal each, same as an ASCII group.
+**Literal namespace (whole engine):** Every literal — ASCII groups, multi-byte codepoints, and range operations — gets a unique byte ID in the range `[1, vectorByteSize-1]`. With 64-byte vectors (AVX-512 / `SPECIES_512`) this means **at most 63 distinct literals**; with 16-byte vectors (ARM NEON / `SPECIES_128`) the limit is **15 distinct literals**. Multi-byte codepoints reuse IDs across rounds (one per UTF-8 byte), so they cost 1 literal each, same as an ASCII group.
 
 **Range operations** are cheap: each range counts as 1 literal and is evaluated separately from the nibble matrix, so ranges don't affect Z3 solvability.
 
