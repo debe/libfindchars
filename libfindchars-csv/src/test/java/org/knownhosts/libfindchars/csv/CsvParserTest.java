@@ -199,4 +199,112 @@ class CsvParserTest {
         assertEquals(innerCommas, result.row(0).get(0));
         assertEquals("b", result.row(0).get(1));
     }
+
+    @Test
+    void newInstanceSharesEngine() {
+        var original = parse("a,b\n1,2\n");
+        var copy = parser.newInstance();
+        var fromCopy = copy.parse("x,y,z\n".getBytes(StandardCharsets.UTF_8));
+        // Both produce correct, independent results
+        assertEquals(2, original.rowCount());
+        assertEquals("a", original.row(0).get(0));
+        assertEquals(1, fromCopy.rowCount());
+        assertEquals("z", fromCopy.row(0).get(2));
+    }
+
+    @Test
+    void storageReuseAcrossParses() {
+        var first = parse("a,b\n");
+        var second = parse("x,y,z\n1,2,3\n");
+        // Second parse reuses grown storage — both results correct
+        assertEquals(1, first.rowCount());
+        assertEquals("a", first.row(0).get(0));
+        assertEquals("b", first.row(0).get(1));
+        assertEquals(2, second.rowCount());
+        assertEquals("z", second.row(0).get(2));
+        assertEquals("3", second.row(1).get(2));
+    }
+
+    @Test
+    void rowsMatchesIndexedAccess() {
+        var result = parse("a,b\nc,d\ne,f\n");
+        var rows = result.rows();
+        assertEquals(result.rowCount(), rows.length);
+        for (int i = 0; i < rows.length; i++) {
+            assertEquals(result.row(i).fieldCount(), rows[i].fieldCount());
+            for (int c = 0; c < rows[i].fieldCount(); c++) {
+                assertEquals(result.row(i).get(c), rows[i].get(c));
+            }
+        }
+    }
+
+    @Test
+    void headerOnlyFile() {
+        var result = parseWithHeader("name,age\n");
+        assertArrayEquals(new String[]{"name", "age"}, result.headers());
+        assertEquals(0, result.rowCount());
+    }
+
+    @Test
+    void emptyFileWithHeader() {
+        var result = headerParser.parse(MemorySegment.ofArray(new byte[0]));
+        assertEquals(0, result.rowCount());
+        assertNull(result.headers());
+    }
+
+    @Test
+    void rowIndexOutOfBounds() {
+        var result = parse("a,b\nc,d\n");
+        assertThrows(IndexOutOfBoundsException.class, () -> result.row(-1));
+        assertThrows(IndexOutOfBoundsException.class, () -> result.row(2));
+    }
+
+    @Test
+    void columnIndexOutOfBounds() {
+        var result = parse("a,b\n");
+        var row = result.row(0);
+        assertThrows(IndexOutOfBoundsException.class, () -> row.get(-1));
+        assertThrows(IndexOutOfBoundsException.class, () -> row.get(2));
+        assertThrows(IndexOutOfBoundsException.class, () -> row.field(-1));
+        assertThrows(IndexOutOfBoundsException.class, () -> row.rawField(2));
+    }
+
+    @Test
+    void streamMatchesRowCount() {
+        var result = parse("a,b\nc,d\ne,f\n");
+        assertEquals(result.rowCount(), result.stream().count());
+        assertTrue(result.stream().findFirst().isPresent());
+        assertEquals("a", result.stream().findFirst().get().get(0));
+    }
+
+    @Test
+    void rawFieldReturnsCorrectSlice() {
+        var result = parse("hello,world\n");
+        var row = result.row(0);
+        // Unquoted fields: rawField returns the exact byte range
+        assertEquals("hello", new String(row.rawField(0).toArray(java.lang.foreign.ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
+        assertEquals("world", new String(row.rawField(1).toArray(java.lang.foreign.ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
+        assertEquals(5, row.rawField(0).byteSize());
+        assertEquals(5, row.rawField(1).byteSize());
+
+        // Quoted field: rawField returns the raw bytes including quotes
+        var quoted = parse("\"a,b\",c\n");
+        var qRow = quoted.row(0);
+        var raw = qRow.rawField(0);
+        byte[] rawBytes = raw.toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
+        assertEquals('"', (char) rawBytes[0]);
+        assertEquals('"', (char) rawBytes[rawBytes.length - 1]);
+        // get() unescapes, rawField() does not
+        assertEquals("a,b", qRow.get(0));
+    }
+
+    @Test
+    void mixedLineEndings() {
+        // LF, CRLF, and bare CR in the same file
+        var result = parse("a\nb\r\nc\r");
+        assertEquals(3, result.rowCount());
+        assertEquals("a", result.row(0).get(0));
+        assertEquals("b", result.row(1).get(0));
+        assertEquals("c", result.row(2).get(0));
+    }
 }

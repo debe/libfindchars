@@ -20,6 +20,7 @@ Here are some tricks it uses:
  * **UTF-8 multi-byte detection** via per-round shuffle mask solving across continuation bytes.
  * **Vector range operations** for matching contiguous byte ranges (e.g. `<=>`, `0-9`) without consuming nibble-matrix capacity — each range costs only 1 literal ID.
  * **Bytecode-compiled engine** with `BytecodeInliner` for zero-overhead inlined SIMD — the engine operations are compiled into a single class, eliminating virtual dispatch entirely.
+ * **VPA chunk filters** for parsing beyond regular languages. Vectorized parallel prefix operations (`prefixXor` for quote toggle, `prefixSum` for nesting depth) enable SIMD-accelerated parsing of CSV, JSON, TOML and other visibly pushdown languages — see [VPA Chunk Filter Framework](#vpa-chunk-filter-framework).
  * Bit hacks to calculate the positions quickly.
  * Auto growing native arrays and memory segments.
 
@@ -109,17 +110,64 @@ try (Arena arena = Arena.ofConfined();
 }
 ```
 
+## VPA Chunk Filter Framework
+
+The base engine recognizes regular languages — it classifies bytes independently with no memory between positions. Real-world formats need more: CSV requires knowing whether a comma is inside quotes, JSON requires tracking brace/bracket depth.
+
+In the [Chomsky hierarchy](https://en.wikipedia.org/wiki/Chomsky_hierarchy), these formats sit between regular and context-free:
+
+```
+Regular (Type 3)          — finite automaton, no stack
+    ↑ libfindchars base engine: character detection, range ops
+Visibly Pushdown (VPL)    — stack ops determined by input symbol
+    ↑ VPA chunk filters: prefixXor (toggle), prefixSum (depth)
+Context-Free (Type 2)     — full PDA, stack ops depend on state
+```
+
+A [Visibly Pushdown Automaton](https://en.wikipedia.org/wiki/Visibly_pushdown_automaton) (VPA) partitions the input alphabet into *call* (push), *return* (pop), and *internal* symbols. Because the stack action is determined by the input symbol alone — not the automaton's state — the stack evolution can be computed in parallel across a vector of input bytes. This is what makes VPA the sweet spot for SIMD parsing: you get structural awareness beyond regex while keeping the computation vectorizable.
+
+### Primitives
+
+`VpaKernel` provides two parallel prefix operations, both using the Hillis-Steele pattern in O(log₂ V) vector steps:
+
+| Primitive | Stack model | Operation | Use cases |
+|-----------|------------|-----------|-----------|
+| `prefixXor` | Stack-1 (binary toggle) | `result[i] = v[0] ^ v[1] ^ ... ^ v[i]` | CSV/TSV quotes, JSON/TOML string literals, SQL quoted identifiers |
+| `prefixSum` | Stack-n (bounded depth) | `result[i] = v[0] + v[1] + ... + v[i]` | JSON `{}[]` nesting, TOML `[[]]` array-of-tables, XML element depth |
+
+A chunk filter composes these primitives to transform the SIMD accumulator *between* detection and position decode. Lanes that fall inside quoted regions or at the wrong nesting depth are zeroed out — the downstream match walker sees only structurally relevant tokens.
+
+### How formats map to VPA
+
+**CSV** — Stack-1 only. Detect `,` `"` `\n` `\r`. Apply `prefixXor` on quote positions to toggle inside/outside state. Zero out commas and newlines inside quoted regions. One cross-chunk carry byte (`state[0]`).
+
+**JSON** — Stack-1 + Stack-n. Detect `{` `}` `[` `]` `"` `,` `:`. Apply `prefixXor` on `"` to mask structural characters inside strings. Then `prefixSum` on `{[` (+1) and `}]` (-1) to compute nesting depth per position. Structural tokens carry their depth — the match walker can extract nested objects without a state machine.
+
+**TOML** — Stack-1 + Stack-n. Detect `[` `]` `"` `=` `\n` `#`. Apply `prefixXor` on `"` to mask inside strings. `prefixSum` on brackets for table/array-of-tables nesting. Comment lines (`#` to `\n`) can be handled as a second `prefixXor` pass.
+
+### Builder API
+
+```java
+var result = Utf8EngineBuilder.builder()
+        .codepoints("quote", '"')
+        .codepoints("delim", ',')
+        .codepoints("lf", '\n')
+        .chunkFilter(MyFilter.class, "quote", "delim", "lf")
+        .build();
+```
+
+The filter class must provide an `@Inline public static ByteVector apply(...)` method matching the `ChunkFilter` signature. The engine provides:
+- **`state`** — mutable `long[8]`, reset per `find()` call, for cross-chunk carry (quote toggles, depth counters)
+- **`scratchpad`** — mutable `byte[vectorByteSize]`, engine-owned working memory
+- **`literals`** — immutable `ByteVector[]` of pre-broadcast literal vectors, indexed by binding order
+
+The filter is bytecode-inlined into the engine at build time — zero virtual dispatch overhead at runtime.
+
 ## CSV Parser
 
-`libfindchars-csv` is a SIMD-accelerated CSV parser built on top of the detection engine. It reaches **~1.8 GB/s** scan throughput on a single core.
+`libfindchars-csv` is the first application of the VPA framework — a SIMD-accelerated CSV parser using only the Stack-1 (`prefixXor`) primitive. Full zero-copy parse reaches **~0.9–1.3 GB/s** on a single core depending on field density, **2–3x faster** than [FastCSV](https://github.com/osiegmar/FastCSV).
 
-```xml
-<dependency>
-    <groupId>org.knownhosts</groupId>
-    <artifactId>libfindchars-csv</artifactId>
-    <version>0.4.0-jdk25-preview</version>
-</dependency>
-```
+> **Note**: `libfindchars-csv` is not yet published to Maven Central. Build from source with `mvn install -pl libfindchars-csv -am`.
 
 ```java
 var parser = CsvParser.builder()
@@ -151,35 +199,7 @@ var pipeParser = CsvParser.builder()
         .build();
 ```
 
-Two-phase architecture:
-1. **SIMD scan + filter**: vectorized detection of `,` `"` `\n` `\r`, then a `CsvQuoteFilter` zeros out structural characters inside quoted regions using parallel prefix XOR.
-2. **Match walker**: linear scan over filtered matches — every comma is a field boundary, every newline is a row boundary. No state machine needed.
-
-The API offers two access levels: `scan()` returns a zero-allocation `CsvMatchView` token stream, and `parse()` returns a `CsvResult` with pre-computed row/field boundaries backed by zero-copy `MemorySegment` offsets.
-
-## Chunk Filter / VPA Framework
-
-The engine supports stateful per-chunk filtering via the `chunkFilter()` builder API. A chunk filter runs between SIMD detection and position decode, transforming the accumulator ByteVector to zero out lanes that should not be emitted as matches.
-
-```java
-var result = Utf8EngineBuilder.builder()
-        .codepoints("quote", '"')
-        .codepoints("delim", ',')
-        .codepoints("lf", '\n')
-        .chunkFilter(MyFilter.class, "quote", "delim", "lf")
-        .build();
-```
-
-The filter class must provide an `@Inline public static ByteVector apply(...)` method matching the `ChunkFilter` signature. The engine provides:
-- **`state`** — mutable `long[8]`, reset per `find()` call, for cross-chunk carry (quote toggles, depth counters)
-- **`scratchpad`** — mutable `byte[vectorByteSize]`, engine-owned working memory
-- **`literals`** — immutable `ByteVector[]` of pre-broadcast literal vectors, indexed by binding order
-
-`VpaKernel` provides reusable vector primitives for filter implementations:
-- `prefixXor(v, zero, sp)` — parallel prefix XOR (toggle state: CSV quotes, string literals)
-- `prefixSum(v, zero, sp)` — parallel prefix SUM (depth tracking: bracket nesting, XML depth)
-
-Both use the Hillis-Steele pattern in O(log₂ V) steps, staying entirely in the ByteVector domain.
+Architecture: the engine detects `,` `"` `\n` `\r` via SIMD, the `CsvQuoteFilter` applies `prefixXor` to zero out structural characters inside quoted regions, and a linear match walker maps commas to field boundaries and newlines to row boundaries. No state machine needed.
 
 ## Solver limits
 
@@ -246,4 +266,30 @@ gnuplot libfindchars-bench/sweep-instructions.gnuplot
 gnuplot libfindchars-bench/sweep-cost-model.gnuplot
 gnuplot libfindchars-bench/sweep-cost-model-combined.gnuplot
 python3 scripts/fit-cost-model.py docs/sweep-data/
+```
+
+### CSV parser benchmark
+
+Environment: JDK 25, AVX-512, single core, 100 MB data. Parameter sweep varies column count, quote percentage, and average field length independently. Baseline: 10 columns, 5% quotes, avg field length 16. The benchmark iterates every row and field via zero-copy `rawField()` access (no String materialization). Compared against [FastCSV](https://github.com/osiegmar/FastCSV) which materializes all field Strings.
+
+![csv sweep overview](./docs/csv-sweep-overview.png)
+
+SIMD Parse reaches **~0.86 GB/s** at baseline, **2.5x faster** than FastCSV (~0.35 GB/s). At longer fields (25–50 bytes) throughput climbs to **1.0–1.3 GB/s**. Key observations:
+
+- **Column count** has minimal effect on parse speed — the SIMD engine processes structural characters at a constant rate regardless of field count.
+- **Quote percentage** reduces throughput as the `CsvQuoteFilter` prefix XOR overhead increases with more quoted regions.
+- **Field length** has the largest impact — shorter fields mean higher structural character density per byte, increasing per-match work in the scalar match walker.
+
+```bash
+# Full CSV sweep
+scripts/run-csv-sweep.sh
+
+# With hardware counters
+scripts/run-csv-sweep.sh --perfnorm
+
+# Quick smoke test
+scripts/run-csv-sweep.sh --quick
+
+# Regenerate plots from existing data
+gnuplot libfindchars-bench/csv-sweep-overview.gnuplot
 ```

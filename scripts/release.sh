@@ -92,7 +92,7 @@ cd "$PROJECT_ROOT"
 ./mvnw versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true -q
 
 # --- Commit the version bump ---
-git add pom.xml libfindchars-api/pom.xml libfindchars-compiler/pom.xml libfindchars-examples/pom.xml libfindchars-bench/pom.xml
+git add pom.xml libfindchars-api/pom.xml libfindchars-compiler/pom.xml libfindchars-csv/pom.xml libfindchars-examples/pom.xml libfindchars-bench/pom.xml
 git diff --cached --quiet || git commit -m "release: ${VERSION}"
 
 # --- Build / Deploy ---

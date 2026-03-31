@@ -140,8 +140,8 @@ public class Utf8EngineTemplate implements FindEngine {
             return new MatchView(0);
         }
 
-        // Pre-allocate storage for worst case (match count bounded by int array size)
-        matchStorage.ensureSize((int) Math.min(dataSize, Integer.MAX_VALUE), 0);
+        // Initial estimate — grows incrementally if actual match count exceeds this.
+        matchStorage.ensureSize((int) Math.min(dataSize / 10, Integer.MAX_VALUE - 64), 0);
 
         // Reset filter carry state for each find() call
         if (filterEnabled != 0) {
@@ -151,18 +151,28 @@ public class Utf8EngineTemplate implements FindEngine {
         int globalCount = 0;
         long i = 0;
 
-        // Extract buffers once to avoid repeated getter calls in processMainBody
         var litBuf = matchStorage.getLiteralBuffer();
         var posBuf = matchStorage.getPositionsBuffer();
 
         // Main loop: process aligned chunks
         while (i + vectorByteSize <= dataSize) {
+            // Grow storage if approaching capacity (one comparison per chunk).
+            if (globalCount + vectorByteSize > litBuf.length) {
+                matchStorage.ensureSize(vectorByteSize, globalCount);
+                litBuf = matchStorage.getLiteralBuffer();
+                posBuf = matchStorage.getPositionsBuffer();
+            }
             globalCount = processMainBody(data, litBuf, posBuf, i, globalCount);
             i += vectorByteSize;
         }
 
-        // Tail: process remaining bytes
+        // Tail: process remaining bytes (may emit up to vectorByteSize matches)
         if (i < dataSize) {
+            if (globalCount + vectorByteSize > litBuf.length) {
+                matchStorage.ensureSize(vectorByteSize, globalCount);
+                litBuf = matchStorage.getLiteralBuffer();
+                posBuf = matchStorage.getPositionsBuffer();
+            }
             int remaining = (int) (dataSize - i);
             Arrays.fill(tailPad, (byte) 0);
             MemorySegment.copy(data, ValueLayout.JAVA_BYTE, i, tailPad, 0, remaining);

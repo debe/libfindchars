@@ -6,7 +6,6 @@ import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 
 import org.knownhosts.libfindchars.api.FindEngine;
 import org.knownhosts.libfindchars.api.MatchStorage;
@@ -19,7 +18,7 @@ import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
  * <p>Two-phase architecture:
  * <ol>
  *   <li><b>SIMD scan + filter</b>: The engine detects {@code ,} {@code "} {@code \n} {@code \r}
- *       at ~1.8 GB/s, and the {@link CsvQuoteFilter} zeros out structural characters
+ *       via SIMD, and the {@link CsvQuoteFilter} zeros out structural characters
  *       inside quoted regions using vectorized prefix XOR.</li>
  *   <li><b>Match walker</b>: A simple linear scan over filtered matches — every comma is
  *       a field boundary, every newline is a row boundary. No state machine needed.</li>
@@ -46,6 +45,8 @@ public final class CsvParser {
     private final boolean hasHeader;
 
     private final CsvToken[] literalToToken;
+    private static final MatchStorage EMPTY_STORAGE = new MatchStorage(0, 0);
+    private MatchStorage storage;
 
     private CsvParser(FindEngine engine, byte quoteLit, byte delimLit,
                       byte newlineLit, byte crLit, byte quoteChar,
@@ -66,24 +67,55 @@ public final class CsvParser {
         literalToToken[crLit & 0xFF] = CsvToken.CR;
     }
 
+    /** Internal constructor sharing the parent's immutable lookup table. */
+    private CsvParser(FindEngine engine, byte quoteLit, byte delimLit,
+                      byte newlineLit, byte crLit, byte quoteChar,
+                      boolean hasHeader, CsvToken[] literalToToken) {
+        this.engine = engine;
+        this.quoteLit = quoteLit;
+        this.delimLit = delimLit;
+        this.newlineLit = newlineLit;
+        this.crLit = crLit;
+        this.quoteChar = quoteChar;
+        this.hasHeader = hasHeader;
+        this.literalToToken = literalToToken;
+    }
+
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Returns a new CsvParser sharing this instance's compiled engine but with
+     * fresh (unallocated) storage. <b>Not thread-safe</b>: the original and
+     * returned parser must not be used concurrently because the engine is not
+     * thread-safe.
+     *
+     * <p>Useful for benchmarking single-parse cost without storage-reuse effects.
+     */
+    public CsvParser newInstance() {
+        return new CsvParser(engine, quoteLit, delimLit, newlineLit, crLit, quoteChar, hasHeader, literalToToken);
     }
 
     /**
      * Zero-allocation scan: returns a {@link CsvMatchView} over the engine's
      * flat arrays. The consumer iterates token types and positions directly —
      * no CsvRow/CsvField objects are created.
+     *
+     * <p>The returned view shares this parser's internal storage. A subsequent
+     * call to {@code scan()} or {@code parse()} on the same parser instance
+     * invalidates any previously returned view. Consume the view before the
+     * next call, or use {@link #newInstance()} for an independent parser.
      */
     public CsvMatchView scan(MemorySegment data) {
         long dataSize = data.byteSize();
         if (dataSize == 0) {
             return new CsvMatchView(new MatchView(0),
-                    new MatchStorage(0, 0), literalToToken, newlineLit);
+                    EMPTY_STORAGE, literalToToken, newlineLit);
         }
-        var storage = new MatchStorage((int) Math.min(dataSize / 4, Integer.MAX_VALUE), 64);
-        var view = engine.find(data, storage);
-        return new CsvMatchView(view, storage, literalToToken, newlineLit);
+        var matchStorage = getOrCreateStorage(dataSize);
+        var view = engine.find(data, matchStorage);
+        return new CsvMatchView(view, matchStorage, literalToToken, newlineLit);
     }
 
     /**
@@ -97,16 +129,19 @@ public final class CsvParser {
     /**
      * Parse CSV data from a MemorySegment. Zero-copy: the returned CsvResult
      * holds field boundaries as offsets into the original segment.
+     *
+     * <p>Unlike {@link #scan}, the returned result is independent of this
+     * parser's internal storage and remains valid across subsequent calls.
      */
     public CsvResult parse(MemorySegment data) {
         long dataSize = data.byteSize();
         if (dataSize == 0) {
-            return new CsvResult(new CsvRow[0], null);
+            return CsvResult.empty();
         }
 
-        var storage = new MatchStorage((int) Math.min(dataSize / 4, Integer.MAX_VALUE), 64);
-        var view = engine.find(data, storage);
-        return walkMatches(data, view, storage, dataSize);
+        var matchStorage = getOrCreateStorage(dataSize);
+        var view = engine.find(data, matchStorage);
+        return walkMatches(data, view, matchStorage, dataSize);
     }
 
     /** Parse CSV data from a byte array. */
@@ -126,87 +161,120 @@ public final class CsvParser {
         }
     }
 
+    /**
+     * Returns the lazily-initialized {@link MatchStorage} for this parser.
+     * The initial capacity is a 25% estimate of {@code dataSize}; the engine
+     * grows the buffers incrementally if actual match count exceeds this.
+     * Subsequent calls reuse the same (possibly already-grown) storage,
+     * so the estimate only matters for the very first parse.
+     */
+    private MatchStorage getOrCreateStorage(long dataSize) {
+        if (storage == null) {
+            storage = new MatchStorage(
+                    (int) Math.min(dataSize / 4, Integer.MAX_VALUE - 64), 64);
+        }
+        return storage;
+    }
+
     private CsvResult walkMatches(MemorySegment data, MatchView view,
                                    MatchStorage storage, long dataSize) {
         int matchCount = view.size();
-        // Count newlines to pre-size rows list (single pass over compact literal buffer)
         byte[] litBuf = storage.getLiteralBuffer();
-        int rowEstimate = 0;
-        for (int i = 0; i < matchCount; i++) {
-            if (litBuf[i] == newlineLit) rowEstimate++;
-        }
-        var rows = new ArrayList<CsvRow>(Math.max(16, rowEstimate));
-        var currentFields = new ArrayList<CsvField>(16);
+        long[] posBuf = storage.getPositionsBuffer();
 
+        // Count row terminators to pre-size rowFieldOffset.  For CRLF data both
+        // the CR and LF are counted, so rowCapacity may be up to 2x the actual row
+        // count — a harmless over-allocation that avoids a look-ahead in this pre-scan.
+        int rowCapacity = 1;
+        for (int i = 0; i < matchCount; i++) {
+            if (litBuf[i] == newlineLit || litBuf[i] == crLit) rowCapacity++;
+        }
+
+        // Upper bound: every match could be a delimiter or newline (quote matches
+        // inflate matchCount but never produce fields).  +1 for the trailing field.
+        int fieldCapacity = matchCount + 1;
+        long[] fieldStarts = new long[fieldCapacity];
+        long[] fieldEnds = new long[fieldCapacity];
+        byte[] fieldFlags = new byte[fieldCapacity];
+        int[] rowFieldOffset = new int[rowCapacity + 1];
+
+        int fieldCount = 0;
+        int rowCount = 0;
         long fieldStart = 0;
         boolean fieldIsQuoted = false;
 
         for (int m = 0; m < matchCount; m++) {
-            long pos = view.getPositionAt(storage, m);
-            byte lit = view.getLiteralAt(storage, m);
+            long pos = posBuf[m];
+            byte lit = litBuf[m];
 
             if (lit == quoteLit) {
-                // Quote in output: at field start → mark as quoted
                 if (pos == fieldStart) {
                     fieldIsQuoted = true;
                 }
-                // Other quote positions are closing quotes or escaped "" pairs.
-                // CsvField.value() handles unescaping during materialization.
             } else if (lit == delimLit) {
-                // Field boundary
-                currentFields.add(new CsvField(fieldStart, pos, fieldIsQuoted, quoteChar));
+                fieldStarts[fieldCount] = fieldStart;
+                fieldEnds[fieldCount] = pos;
+                fieldFlags[fieldCount] = fieldIsQuoted ? (byte) 1 : 0;
+                fieldCount++;
                 fieldStart = pos + 1;
                 fieldIsQuoted = false;
             } else if (lit == newlineLit) {
-                // Row boundary. Check for CRLF: if previous match was CR at pos-1
                 long fieldEnd = pos;
-                if (m > 0) {
-                    long prevPos = view.getPositionAt(storage, m - 1);
-                    byte prevLit = view.getLiteralAt(storage, m - 1);
-                    if (prevLit == crLit && prevPos == pos - 1) {
-                        fieldEnd = pos - 1;
-                    }
+                if (m > 0 && litBuf[m - 1] == crLit && posBuf[m - 1] == pos - 1) {
+                    fieldEnd = pos - 1;
                 }
-                currentFields.add(new CsvField(fieldStart, fieldEnd, fieldIsQuoted, quoteChar));
-                rows.add(new CsvRow(data, currentFields.toArray(CsvField[]::new)));
-                currentFields.clear();
+                fieldStarts[fieldCount] = fieldStart;
+                fieldEnds[fieldCount] = fieldEnd;
+                fieldFlags[fieldCount] = fieldIsQuoted ? (byte) 1 : 0;
+                fieldCount++;
+                rowFieldOffset[rowCount + 1] = fieldCount;
+                rowCount++;
                 fieldStart = pos + 1;
                 fieldIsQuoted = false;
             } else if (lit == crLit) {
-                // CR: if next match is LF at pos+1, let LF handle it (CRLF)
-                if (m + 1 < matchCount) {
-                    long nextPos = view.getPositionAt(storage, m + 1);
-                    byte nextLit = view.getLiteralAt(storage, m + 1);
-                    if (nextLit == newlineLit && nextPos == pos + 1) {
-                        continue; // CRLF: skip CR, LF will close the row
-                    }
+                if (m + 1 < matchCount && litBuf[m + 1] == newlineLit
+                        && posBuf[m + 1] == pos + 1) {
+                    continue; // CRLF: skip CR, LF will close the row
                 }
-                // Bare CR as line ending
-                currentFields.add(new CsvField(fieldStart, pos, fieldIsQuoted, quoteChar));
-                rows.add(new CsvRow(data, currentFields.toArray(CsvField[]::new)));
-                currentFields.clear();
+                fieldStarts[fieldCount] = fieldStart;
+                fieldEnds[fieldCount] = pos;
+                fieldFlags[fieldCount] = fieldIsQuoted ? (byte) 1 : 0;
+                fieldCount++;
+                rowFieldOffset[rowCount + 1] = fieldCount;
+                rowCount++;
                 fieldStart = pos + 1;
                 fieldIsQuoted = false;
             }
         }
 
         // Handle final field (no trailing newline)
-        if (fieldStart <= dataSize && (!currentFields.isEmpty() || fieldStart < dataSize)) {
-            currentFields.add(new CsvField(fieldStart, dataSize, fieldIsQuoted, quoteChar));
-            rows.add(new CsvRow(data, currentFields.toArray(CsvField[]::new)));
+        if (fieldStart <= dataSize
+                && (fieldCount > rowFieldOffset[rowCount] || fieldStart < dataSize)) {
+            fieldStarts[fieldCount] = fieldStart;
+            fieldEnds[fieldCount] = dataSize;
+            fieldFlags[fieldCount] = fieldIsQuoted ? (byte) 1 : 0;
+            fieldCount++;
+            rowFieldOffset[rowCount + 1] = fieldCount;
+            rowCount++;
         }
 
         // Extract headers if configured
         String[] headers = null;
-        if (hasHeader && !rows.isEmpty()) {
-            var headerRow = rows.removeFirst();
-            headers = new String[headerRow.fieldCount()];
-            for (int c = 0; c < headerRow.fieldCount(); c++) {
-                headers[c] = headerRow.get(c);
+        int dataRowStart = 0;
+        if (hasHeader && rowCount > 0) {
+            int hStart = rowFieldOffset[0];
+            int hEnd = rowFieldOffset[1];
+            headers = new String[hEnd - hStart];
+            for (int c = 0; c < headers.length; c++) {
+                int fi = hStart + c;
+                headers[c] = new CsvField(fieldStarts[fi], fieldEnds[fi],
+                        fieldFlags[fi] != 0, quoteChar).value(data);
             }
+            dataRowStart = 1;
         }
 
-        return new CsvResult(rows.toArray(CsvRow[]::new), headers);
+        return new CsvResult(data, fieldStarts, fieldEnds, fieldFlags,
+                rowFieldOffset, rowCount, dataRowStart, headers, quoteChar);
     }
 
     public static final class Builder {

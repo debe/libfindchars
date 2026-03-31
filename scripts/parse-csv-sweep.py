@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
-"""Parse JMH JSON output into per-sweep TSV files for gnuplot."""
+"""Parse JMH JSON output into per-sweep TSV files for CSV benchmark gnuplot."""
 
 import json
 import os
 import sys
 
 
-DATA_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+DATA_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 
 # Baseline values
-BASELINE = {"ascii": 8, "density": 15, "mb": 0, "groups": 2}
+BASELINE = {"columns": 10, "quote": 5, "fieldlen": 16}
 
 # Sweep definitions: (name, param_index, values, description)
 SWEEPS = [
-    ("ascii-count",  0, [2, 4, 8, 12, 20], "asciiCount"),
-    ("density",      1, [5, 15, 30, 50],    "density"),
-    ("multibyte",    2, [0, 1, 2, 3],       "multiByteCount"),
-    ("groups",       3, [1, 2, 4, 8],       "groups"),
+    ("columns",  0, [5, 10, 25, 50, 100], "columns"),
+    ("quotes",   1, [0, 5, 25, 50],       "quotePercent"),
+    ("fieldlen", 2, [10, 16, 25, 50],     "avgFieldLen"),
 ]
 
 # Perfnorm counter keys in JMH JSON
@@ -26,7 +25,7 @@ PERFNORM_KEYS = [
 
 
 def parse_config(config_str):
-    """Parse 'asciiCount-density-mbCount-groups' into tuple of ints."""
+    """Parse 'columns-quotePercent-avgFieldLen' into tuple of ints."""
     return tuple(int(x) for x in config_str.split("-"))
 
 
@@ -37,11 +36,11 @@ def method_name(benchmark_name):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: parse-sweep.py <jmh-results.json> [output-dir]", file=sys.stderr)
+        print("Usage: parse-csv-sweep.py <jmh-results.json> [output-dir]", file=sys.stderr)
         sys.exit(1)
 
     json_path = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else "docs/sweep-data"
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else "docs/csv-sweep-data"
     os.makedirs(output_dir, exist_ok=True)
 
     with open(json_path) as f:
@@ -83,7 +82,7 @@ def main():
 
     # Generate per-sweep TSV
     for sweep_name, param_idx, values, _ in SWEEPS:
-        tsv_path = os.path.join(output_dir, f"sweep-{sweep_name}.tsv")
+        tsv_path = os.path.join(output_dir, f"csv-sweep-{sweep_name}.tsv")
         with open(tsv_path, "w") as out:
             # Header
             cols = ["param", "method", "ops_s", "ops_s_err", "gb_s"]
@@ -92,12 +91,12 @@ def main():
 
             for val in values:
                 # Build config tuple for this sweep point
-                baseline_list = [BASELINE["ascii"], BASELINE["density"],
-                                 BASELINE["mb"], BASELINE["groups"]]
+                baseline_list = [BASELINE["columns"], BASELINE["quote"],
+                                 BASELINE["fieldlen"]]
                 baseline_list[param_idx] = val
                 config = tuple(baseline_list)
 
-                for method in ["simdCompiled", "simdC2Jit", "regex", "regexWithConversion"]:
+                for method in ["simdParse", "fastCsv"]:
                     key = (config, method)
                     if key not in indexed:
                         print(f"  WARNING: missing {config} / {method}", file=sys.stderr)

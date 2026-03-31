@@ -29,8 +29,10 @@ mvn test -Dtest=LiteralCompilerTest -pl libfindchars-compiler
 # Run a single test method
 mvn test -Dtest=LiteralCompilerTest#testMethodName -pl libfindchars-compiler
 
-# Run benchmarks (from root, not -pl — bench needs reactor for csv dependency)
-mvn test -Dtest=CsvProfileTest -Dsurefire.failIfNoSpecifiedTests=false -pl libfindchars-bench -am
+# Run CSV sweep benchmark (from root — bench needs reactor for csv dependency)
+scripts/run-csv-sweep.sh              # Full: 3D sweep (columns, quote%, field length)
+scripts/run-csv-sweep.sh --quick      # Smoke test (1 fork, 1 warmup, 1 measurement)
+scripts/run-csv-sweep.sh --perfnorm   # With hardware counters (Linux only)
 ```
 
 **Important**: Requires **JDK 25** with `--enable-preview` and `--add-modules=jdk.incubator.vector`. Maven Surefire is pre-configured with these JVM args. The build compiles with `--release 25`. Maven coordinates: `org.knownhosts:libfindchars-compiler:0.4.0-jdk25-preview`.
@@ -58,7 +60,7 @@ api (no deps)
  |--- bench (also depends on api directly)
 ```
 
-Published to Maven Central: `libfindchars-api`, `libfindchars-compiler`, `libfindchars-csv`. Skipped: examples, bench.
+Published to Maven Central: `libfindchars-api`, `libfindchars-compiler`. Skipped: csv, examples, bench.
 
 ### libfindchars-api
 Core runtime engine, API, and `@Inline` annotation (9 classes):
@@ -107,10 +109,10 @@ SIMD-accelerated CSV parser (~1.8 GB/s scan, ~25% faster than FastCSV). Two-phas
 - **Phase 2**: Linear match walker — every comma is a field boundary, every newline is a row boundary. No state machine.
 
 Classes (7):
-- `CsvParser` — Builder: `.delimiter()`, `.quote()`, `.hasHeader()`. API: `scan(MemorySegment)` → zero-alloc `CsvMatchView`; `parse(MemorySegment|byte[]|Path)` → `CsvResult` with zero-copy field boundaries.
+- `CsvParser` — Builder: `.delimiter()`, `.quote()`, `.hasHeader()`. API: `scan(MemorySegment)` → zero-alloc `CsvMatchView`; `parse(MemorySegment|byte[]|Path)` → `CsvResult` with zero-copy field boundaries. `newInstance()` shares the compiled engine with fresh storage (useful for benchmarking per-parse cost).
 - `CsvQuoteFilter` — `ChunkFilter` using `VpaKernel.prefixXor()`. Fast path: skips prefix computation when no quotes and no carry.
 - `CsvMatchView` — Zero-allocation view: `size()`, `positionAt(i)`, `tokenAt(i)`, `rowCount()` (lazy).
-- `CsvResult` — Record: `rows()`, `headers()`, `rowCount()`, `row(i)`, `stream()`.
+- `CsvResult` — Flat-array backed result: `rowCount()`, `row(i)` (lazy `CsvRow` view), `headers()`, `stream()`, `rows()` (materializes array). Holds `fieldStarts/fieldEnds/fieldFlags/rowFieldOffset` internally; zero allocation until field access.
 - `CsvRow` — Zero-copy row: `fieldCount()`, `get(col)` (materializes String), `field(col)`, `rawField(col)` (MemorySegment slice).
 - `CsvField` — Record: `startOffset`, `endOffset`, `quoted`, `quoteByte`. `value(data)` handles unescape (`""` → `"`). `rawSlice(data)` for zero-copy.
 - `CsvToken` — Sealed interface: `Quote`, `Delimiter`, `Newline`, `Cr` singleton records.
@@ -123,12 +125,11 @@ Usage examples in `zz.customname` package:
 ### libfindchars-bench
 JMH benchmarks and profiling harnesses:
 - `SweepBenchmark` — 4D parameter sweep (ASCII count, density, multi-byte count, groups). Composite `@Param` string format `asciiCount-density-multiByteCount-groups`.
-- `CsvBenchmark` — CSV parser throughput at various configs.
-- `CsvManualProfile` — Manual profiling harness (50 MB data, 100 iters, scan+filter vs full parse).
+- `CsvSweepBenchmark` — 3D CSV sweep (columns, quote%, field length) with FastCSV comparison. Composite `@Param` string format `columns-quotePercent-avgFieldLen`. 100 MB data.
 - `CsvDataGenerator` — Deterministic CSV generation with configurable columns, quote%, CRLF, field length.
 - `BenchDataGenerator` — Parameterized test data with target match densities.
 
-Test classes: `CsvProfileTest` (11 micro-profiling tests), `FastCsvComparisonTest`, `DataGenerationTest`.
+Test classes: `DataGenerationTest`.
 
 ## Key Design Patterns
 
@@ -183,11 +184,17 @@ scripts/run-sweep.sh              # Full: 4D sweep (ascii, density, mb, groups)
 scripts/run-sweep.sh --quick      # Smoke test (1 fork, 1 warmup, 1 measurement)
 scripts/run-sweep.sh --perfnorm   # With hardware counters (Linux only)
 
+# CSV sweep benchmarks (SIMD scan/parse vs FastCSV)
+scripts/run-csv-sweep.sh              # Full: 3D sweep (columns, quote%, field length)
+scripts/run-csv-sweep.sh --quick      # Smoke test (1 fork, 1 warmup, 1 measurement)
+scripts/run-csv-sweep.sh --perfnorm   # With hardware counters (Linux only)
+
 # Cost model fitting (requires numpy)
 python3 scripts/fit-cost-model.py docs/sweep-data/
 
 # Regenerate plots
 gnuplot libfindchars-bench/sweep-overview.gnuplot
+gnuplot libfindchars-bench/csv-sweep-overview.gnuplot
 ```
 
 ## Releasing
@@ -196,7 +203,7 @@ gnuplot libfindchars-bench/sweep-overview.gnuplot
 
 **Tag format**: `v{version}` (e.g. `v0.4.0-jdk25-preview`).
 
-**Published artifacts**: `libfindchars-api`, `libfindchars-compiler`, `libfindchars-csv`. Examples and bench skip deployment.
+**Published artifacts**: `libfindchars-api`, `libfindchars-compiler`. CSV, examples, and bench skip deployment.
 
 **Prerequisites**:
 - GPG signing key available to `gpg-agent`

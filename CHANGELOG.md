@@ -6,22 +6,30 @@ Versioning: `{semver}-jdk{N}-preview` until the Vector API graduates from incuba
 
 ## [Unreleased]
 
+## [0.5.0-jdk25-preview] — 2026-03-31
+
 ### Added
-- **libfindchars-csv** — SIMD-accelerated CSV parser (~1.8 GB/s scan per core). Builder API, zero-copy field access via `MemorySegment` offsets, memory-mapped file support.
+- **libfindchars-csv** — SIMD-accelerated CSV parser (~0.9–1.3 GB/s full parse per core, 2–3x faster than FastCSV). Builder API, zero-copy field access via `MemorySegment` offsets, memory-mapped file support.
 - **VPA chunk filter framework** — stateful per-chunk filtering between SIMD detection and decode. `VpaKernel` provides `prefixXor` (toggle state) and `prefixSum` (depth tracking) as Hillis-Steele parallel prefix primitives in O(log₂ V) steps. `CsvQuoteFilter` is the first built-in filter.
 - **Platform-adaptive decode** — AVX-512 uses `VPCOMPRESSB`; ARM/AVX2 uses `intoArray()` + scatter to avoid `compress()` lambda fallback in hidden classes. `anyTrue()` guard defers expensive `toLong()`.
 - **`cleanLUT` shuffle** — `selectFrom()` replaces per-literal compare+add loops, O(1) per group.
+- **CSV parameter sweep benchmark** — 3D JMH sweep (columns, quote%, field length) with FastCSV comparison, gnuplot visualization, and run scripts.
 - Architectural constraints via `.sentrux/rules.toml`
-- New tests: `MatchStorageTest`, `VpaKernelTest`, `CsvProfileTest` (11 microbenchmarks), `FastCsvComparisonTest`
+- New tests: `MatchStorageTest`, `VpaKernelTest`, 10 new `CsvParserTest` cases (28 total)
 
 ### Changed
 - **Breaking: position type `int` → `long`** — `MatchView.getPositionAt()` now returns `long`, enabling files >2 GB
+- **CSV result architecture** — `CsvResult` refactored from record with object-per-field to flat-array backed class (`fieldStarts/fieldEnds/fieldFlags/rowFieldOffset`). Lazy `CsvRow` views, zero allocation until field access.
+- **Incremental buffer growth** — `Utf8EngineTemplate` allocates `dataSize/10` initially and grows per-chunk, replacing worst-case `dataSize` pre-allocation. ~10x memory reduction for large files.
+- **`CsvParser.newInstance()`** — shares compiled engine with fresh storage for independent parse results (useful for benchmarking per-parse cost).
 - Refactored `LiteralCompiler`, `Utf8EngineBuilder`, and bytecode inliner pipeline for readability
 - `DeadCodeEliminator` now resolves single-operand constant branches (`ifeq`/`ifne`/etc.)
+- Replaced ad-hoc CSV benchmarks (`CsvBenchmark`, `CsvManualProfile`, `CsvProfileTest`, `FastCsvComparisonTest`) with `CsvSweepBenchmark`
 
 ### Fixed
 - Fuzz test skips unsolvable random configurations instead of failing
 - CI: Z3 native library download, `--enable-native-access`, javasmt-solver-z3 4.14.0
+- `parse-sweep.py` handles NaN scoreError from JMH
 
 ### Dependencies
 - `logback-classic` 1.4.14 → 1.5.32
