@@ -104,7 +104,7 @@ else
     GOAL=deploy
 fi
 
-if ! ./mvnw clean "$GOAL" -Prelease -pl '!libfindchars-examples,!libfindchars-bench'; then
+if ! ./mvnw clean "$GOAL" -Prelease -pl '!libfindchars-csv,!libfindchars-examples,!libfindchars-bench'; then
     info "Build failed — version commit remains, fix and retry or reset"
     exit 1
 fi
