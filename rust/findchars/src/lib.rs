@@ -183,6 +183,7 @@ impl EngineBuilder {
         let mut low_luts = Vec::with_capacity(group_count);
         let mut high_luts = Vec::with_capacity(group_count);
         let mut clean_luts = Vec::with_capacity(group_count);
+        let mut group_literals = Vec::with_capacity(group_count);
 
         for mask in &masks {
             low_luts.push(mask.low_nibble_mask);
@@ -190,10 +191,15 @@ impl EngineBuilder {
 
             // Build clean LUT: only known literal values pass through, rest → 0
             let mut clean = [0u8; 256];
+            let mut lits = Vec::new();
             for &(_, lit) in &mask.literal_map {
                 clean[lit as usize] = lit;
+                if !lits.contains(&lit) {
+                    lits.push(lit);
+                }
             }
             clean_luts.push(clean);
+            group_literals.push(lits);
         }
 
         // Build range operations, assign unused literal IDs
@@ -212,6 +218,7 @@ impl EngineBuilder {
 
         let engine_data = EngineData {
             low_luts,
+            group_literals,
             high_luts,
             clean_luts,
             group_count,
@@ -219,10 +226,7 @@ impl EngineBuilder {
             vector_byte_size: vbs,
         };
 
-        // Select find function based on backend
-        // Phase 1: scalar only
-        let find_fn = kernel::scalar::find_scalar;
-
+        let find_fn = backend.find_fn();
         let engine = FindEngine::new(engine_data, find_fn);
         Ok(BuildResult {
             engine,

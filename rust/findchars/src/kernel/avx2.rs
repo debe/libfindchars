@@ -1,0 +1,166 @@
+//! AVX2 backend — 256-bit (32 bytes per chunk) SIMD detection.
+//!
+//! Uses SSSE3 `vpshufb` for nibble-based shuffle lookup and AVX2 for
+//! 256-bit operations. The 16-entry LUTs are duplicated across both
+//! 128-bit lanes since `vpshufb` operates per-lane.
+
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
+
+use crate::engine::{EngineData, MatchStorage};
+
+/// Vector byte size for AVX2.
+const VBS: usize = 32;
+
+/// AVX2 find implementation. Processes 32 bytes per chunk.
+///
+/// # Safety
+/// Caller must ensure AVX2 + SSSE3 are available (checked at engine build time).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+pub(crate) unsafe fn find_avx2(
+    engine: &EngineData,
+    data: &[u8],
+    storage: &mut MatchStorage,
+) -> usize {
+    unsafe {
+        let len = data.len();
+        if len == 0 {
+            return 0;
+        }
+
+        storage.ensure_capacity(len / 4 + 64);
+
+        let low_mask = _mm256_set1_epi8(0x0F);
+        let zero = _mm256_setzero_si256();
+
+        let mut count = 0usize;
+        let mut offset = 0usize;
+
+        // Process full 32-byte chunks
+        while offset + VBS <= len {
+            let chunk = _mm256_loadu_si256(data.as_ptr().add(offset) as *const __m256i);
+            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, storage, count);
+            offset += VBS;
+        }
+
+        // Handle tail (< 32 bytes) — pad with zeros
+        if offset < len {
+            let remaining = len - offset;
+            let mut buf = [0u8; VBS];
+            buf[..remaining].copy_from_slice(&data[offset..]);
+            let chunk = _mm256_loadu_si256(buf.as_ptr() as *const __m256i);
+            let prev_count = storage.len();
+            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, storage, count);
+            // Remove matches beyond valid data range
+            let valid_end = len as u32;
+            while storage.len() > prev_count && *storage.positions.last().unwrap() >= valid_end {
+                storage.positions.pop();
+                storage.literals.pop();
+                count -= 1;
+            }
+        }
+
+        count
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn process_chunk_avx2(
+    engine: &EngineData,
+    chunk: __m256i,
+    low_mask: __m256i,
+    zero: __m256i,
+    base_offset: usize,
+    storage: &mut MatchStorage,
+    mut count: usize,
+) -> usize {
+    unsafe {
+        let mut accumulator = zero;
+
+        // Apply each shuffle group
+        for g in 0..engine.group_count {
+            let raw = shuffle_avx2(chunk, &engine.low_luts[g], &engine.high_luts[g], low_mask);
+            let cleaned = clean_avx2(raw, &engine.group_literals[g], zero);
+            accumulator = _mm256_or_si256(accumulator, cleaned);
+        }
+
+        // Apply range operations
+        for &(lower, upper, lit) in &engine.ranges {
+            let lower_v = _mm256_set1_epi8(lower as i8);
+            let upper_v = _mm256_set1_epi8(upper as i8);
+            let lit_v = _mm256_set1_epi8(lit as i8);
+
+            // Unsigned compare via max/min
+            let above_lower = _mm256_cmpeq_epi8(_mm256_max_epu8(chunk, lower_v), chunk);
+            let below_upper = _mm256_cmpeq_epi8(_mm256_min_epu8(chunk, upper_v), chunk);
+            let in_range = _mm256_and_si256(above_lower, below_upper);
+            accumulator = _mm256_or_si256(accumulator, _mm256_and_si256(in_range, lit_v));
+        }
+
+        // Fast rejection
+        if _mm256_testz_si256(accumulator, accumulator) != 0 {
+            return count;
+        }
+
+        // Decode non-zero positions
+        let nonzero_mask = _mm256_cmpeq_epi8(accumulator, _mm256_setzero_si256());
+        let mut bits = !(_mm256_movemask_epi8(nonzero_mask) as u32);
+
+        let mut acc_bytes = [0u8; VBS];
+        _mm256_storeu_si256(acc_bytes.as_mut_ptr() as *mut __m256i, accumulator);
+
+        while bits != 0 {
+            let lane = bits.trailing_zeros() as usize;
+            storage.push((base_offset + lane) as u32, acc_bytes[lane]);
+            count += 1;
+            bits &= bits - 1;
+        }
+
+        count
+    }
+}
+
+/// Nibble-based shuffle lookup using vpshufb.
+/// LUTs are 16 entries duplicated across both 128-bit lanes.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn shuffle_avx2(
+    input: __m256i,
+    low_lut: &[u8; 16],
+    high_lut: &[u8; 16],
+    low_mask: __m256i,
+) -> __m256i {
+    unsafe {
+        let lo_lut = _mm256_broadcastsi128_si256(_mm_loadu_si128(low_lut.as_ptr() as *const __m128i));
+        let hi_lut = _mm256_broadcastsi128_si256(_mm_loadu_si128(high_lut.as_ptr() as *const __m128i));
+
+        let lo_nibble = _mm256_and_si256(input, low_mask);
+        let lo_result = _mm256_shuffle_epi8(lo_lut, lo_nibble);
+
+        let hi_nibble = _mm256_and_si256(_mm256_srli_epi16(input, 4), low_mask);
+        let hi_result = _mm256_shuffle_epi8(hi_lut, hi_nibble);
+
+        _mm256_and_si256(lo_result, hi_result)
+    }
+}
+
+/// Clean step: compare-and-blend per literal value.
+/// Result is non-zero only where raw matches a known literal.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn clean_avx2(raw: __m256i, literal_values: &[u8], zero: __m256i) -> __m256i {
+    unsafe {
+        let mut result = zero;
+        for &lit in literal_values {
+            let lit_v = _mm256_set1_epi8(lit as i8);
+            let mask = _mm256_cmpeq_epi8(raw, lit_v);
+            result = _mm256_or_si256(result, _mm256_and_si256(mask, lit_v));
+        }
+        result
+    }
+}

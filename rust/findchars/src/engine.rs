@@ -16,7 +16,10 @@ pub(crate) struct EngineData {
     pub high_luts: Vec<[u8; 16]>,
     /// Per-group clean LUTs: maps non-literal AND results to zero.
     /// Index by AND result byte → 0 if not a literal, literal value if it is.
+    /// Used by the scalar backend.
     pub clean_luts: Vec<[u8; 256]>,
+    /// Per-group literal byte values (for SIMD compare-and-blend clean step).
+    pub group_literals: Vec<Vec<u8>>,
     /// Number of shuffle groups.
     pub group_count: usize,
     /// Range operations: (lower bound, upper bound, literal byte).
@@ -26,7 +29,7 @@ pub(crate) struct EngineData {
 }
 
 /// Type alias for the find function pointer.
-type FindFn = fn(&EngineData, &[u8], &mut MatchStorage) -> usize;
+pub(crate) type FindFn = fn(&EngineData, &[u8], &mut MatchStorage) -> usize;
 
 /// SIMD character detection engine.
 ///
