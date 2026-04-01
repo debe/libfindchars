@@ -96,18 +96,27 @@ impl CsvParser {
         let match_count = positions.len();
         let data_size = data.len();
 
-        let mut row_capacity = 1usize;
+        // Pre-scan: count delimiters and row terminators in one pass
+        // to size all arrays exactly. This avoids any Vec growth during the walk.
+        let mut delim_count = 0u32;
+        let mut row_term_count = 0u32;
         for &lit in match_literals {
-            if lit == self.newline_lit || lit == self.cr_lit {
-                row_capacity += 1;
+            if lit == self.delim_lit {
+                delim_count += 1;
+            } else if lit == self.newline_lit || lit == self.cr_lit {
+                row_term_count += 1;
             }
         }
 
-        let field_capacity = match_count + 1;
+        // Fields = delimiters + row_terminators + 1 (trailing field)
+        // Rows = row_terminators + 1 (may overcount for CRLF, harmless)
+        let field_capacity = (delim_count + row_term_count + 2) as usize;
+        let row_capacity = (row_term_count + 2) as usize;
+
         let mut field_starts: Vec<u32> = Vec::with_capacity(field_capacity);
         let mut field_ends: Vec<u32> = Vec::with_capacity(field_capacity);
         let mut field_flags: Vec<u8> = Vec::with_capacity(field_capacity);
-        let mut row_field_offset: Vec<usize> = Vec::with_capacity(row_capacity + 1);
+        let mut row_field_offset: Vec<usize> = Vec::with_capacity(row_capacity);
         row_field_offset.push(0);
 
         let mut field_start = 0u32;
