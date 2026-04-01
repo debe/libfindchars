@@ -122,6 +122,7 @@ impl LiteralCompiler {
             }
         }
 
+        #[allow(clippy::needless_range_loop)]
         for i in 0..16 {
             for j in 0..16 {
                 if target_nibble_pairs.contains(&(i, j)) {
