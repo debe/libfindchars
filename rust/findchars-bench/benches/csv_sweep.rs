@@ -2,7 +2,7 @@
 //!
 //! Dimensions: column count, quote percentage, average field length.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use findchars::MatchStorage;
 use findchars_bench::generate_csv_data;
 use findchars_csv::CsvParser;
@@ -25,8 +25,8 @@ fn csv_sweep_columns(c: &mut Criterion) {
             |b, data| {
                 let mut storage = MatchStorage::new(data.len() / 4);
                 b.iter(|| {
-                    let r = parser.parse(data, &mut storage).unwrap();
-                    r.row_count()
+                    let r = parser.parse(black_box(data), &mut storage).unwrap();
+                    black_box(r.row_count())
                 });
             },
         );
@@ -49,8 +49,8 @@ fn csv_sweep_quotes(c: &mut Criterion) {
             |b, data| {
                 let mut storage = MatchStorage::new(data.len() / 4);
                 b.iter(|| {
-                    let r = parser.parse(data, &mut storage).unwrap();
-                    r.row_count()
+                    let r = parser.parse(black_box(data), &mut storage).unwrap();
+                    black_box(r.row_count())
                 });
             },
         );
@@ -73,8 +73,8 @@ fn csv_sweep_field_len(c: &mut Criterion) {
             |b, data| {
                 let mut storage = MatchStorage::new(data.len() / 4);
                 b.iter(|| {
-                    let r = parser.parse(data, &mut storage).unwrap();
-                    r.row_count()
+                    let r = parser.parse(black_box(data), &mut storage).unwrap();
+                    black_box(r.row_count())
                 });
             },
         );

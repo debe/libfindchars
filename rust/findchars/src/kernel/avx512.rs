@@ -1,8 +1,8 @@
 //! AVX-512 backend — 512-bit (64 bytes per chunk) SIMD detection.
 //!
-//! Uses AVX-512 VBMI `vpermb` for full 64-byte shuffle (no lane splitting),
-//! AVX-512BW for byte-level operations, and `vpcompressb` for single-instruction
-//! position extraction.
+//! Uses pre-broadcast 512-bit LUTs loaded once per chunk (not per group),
+//! AVX-512 VBMI `vpermb` for both shuffle and clean steps (single instruction each),
+//! and `vpcompressb` for single-instruction position extraction.
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
@@ -15,9 +15,9 @@ const VBS: usize = 64;
 /// AVX-512 find implementation. Processes 64 bytes per chunk.
 ///
 /// # Safety
-/// Caller must ensure AVX-512BW + AVX-512VBMI are available.
+/// Caller must ensure AVX-512BW + AVX-512VBMI + AVX-512VBMI2 are available.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
+#[target_feature(enable = "avx512f,avx512bw,avx512vbmi,avx512vbmi2")]
 pub(crate) unsafe fn find_avx512(
     engine: &EngineData,
     data: &[u8],
@@ -29,34 +29,34 @@ pub(crate) unsafe fn find_avx512(
             return 0;
         }
 
-        storage.ensure_capacity(len / 4 + 64);
+        // Pre-size storage for worst case: every byte matches
+        storage.ensure_capacity(len + 64);
 
         let low_mask = _mm512_set1_epi8(0x0F);
-        let zero = _mm512_setzero_si512();
-
         let has_filter = (engine.filter_fn as *const ()) != (vpa::no_op_filter as *const ());
         let mut filter_state: vpa::FilterState = [0i64; 8];
         let mut count = 0usize;
         let mut offset = 0usize;
 
+        // Main loop: full 64-byte chunks
         while offset + VBS <= len {
             let chunk = _mm512_loadu_si512(data.as_ptr().add(offset) as *const _);
-            count = process_chunk_avx512(
-                engine, chunk, low_mask, zero, offset, VBS,
+            count = process_chunk(
+                engine, chunk, low_mask, offset, VBS,
                 has_filter, &mut filter_state, storage, count,
             );
             offset += VBS;
         }
 
-        // Tail: pad with zeros
+        // Tail: zero-padded
         if offset < len {
             let remaining = len - offset;
             let mut buf = [0u8; VBS];
             buf[..remaining].copy_from_slice(&data[offset..]);
             let chunk = _mm512_loadu_si512(buf.as_ptr() as *const _);
             let prev_count = storage.len();
-            count = process_chunk_avx512(
-                engine, chunk, low_mask, zero, offset, remaining,
+            count = process_chunk(
+                engine, chunk, low_mask, offset, remaining,
                 has_filter, &mut filter_state, storage, count,
             );
             let valid_end = len as u32;
@@ -71,14 +71,14 @@ pub(crate) unsafe fn find_avx512(
     }
 }
 
+/// Process one 64-byte chunk: detect → filter → decode.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
+#[target_feature(enable = "avx512f,avx512bw,avx512vbmi,avx512vbmi2")]
 #[inline]
-unsafe fn process_chunk_avx512(
+unsafe fn process_chunk(
     engine: &EngineData,
     chunk: __m512i,
     low_mask: __m512i,
-    zero: __m512i,
     base_offset: usize,
     chunk_len: usize,
     has_filter: bool,
@@ -87,24 +87,37 @@ unsafe fn process_chunk_avx512(
     mut count: usize,
 ) -> usize {
     unsafe {
-        let mut accumulator = zero;
+        let mut accumulator = _mm512_setzero_si512();
 
-        // Apply round 0 groups
+        // Apply round 0 groups using pre-broadcast LUTs + vpermb clean
         if !engine.round_group_count.is_empty() {
             let r0_start = engine.round_group_start[0];
             let r0_count = engine.round_group_count[0];
             for g in r0_start..r0_start + r0_count {
-                let raw = shuffle_avx512(chunk, &engine.low_luts[g], &engine.high_luts[g], low_mask);
-                let cleaned = clean_avx512(raw, &engine.group_literals[g], zero);
+                // Load pre-broadcast 512-bit LUTs (single load each, no broadcast)
+                let lo_lut = _mm512_loadu_si512(engine.low_luts_512[g].as_ptr() as *const _);
+                let hi_lut = _mm512_loadu_si512(engine.high_luts_512[g].as_ptr() as *const _);
+                let clean_lut = _mm512_loadu_si512(engine.clean_luts_512[g].as_ptr() as *const _);
+
+                // Shuffle: nibble split → vpermb → AND
+                let lo_nibble = _mm512_and_si512(chunk, low_mask);
+                let lo_result = _mm512_permutexvar_epi8(lo_nibble, lo_lut);
+                let hi_nibble = _mm512_and_si512(_mm512_srli_epi16(chunk, 4), low_mask);
+                let hi_result = _mm512_permutexvar_epi8(hi_nibble, hi_lut);
+                let raw = _mm512_and_si512(lo_result, hi_result);
+
+                // Clean: single vpermb maps non-literal values to zero
+                let cleaned = _mm512_permutexvar_epi8(raw, clean_lut);
+
                 accumulator = _mm512_or_si512(accumulator, cleaned);
             }
         }
 
-        // Range operations
-        for &(lower, upper, lit) in &engine.ranges {
-            let lower_v = _mm512_set1_epi8(lower as i8);
-            let upper_v = _mm512_set1_epi8(upper as i8);
-            let lit_v = _mm512_set1_epi8(lit as i8);
+        // Range operations using pre-broadcast vectors
+        for (i, &(_, _, _)) in engine.ranges.iter().enumerate() {
+            let lower_v = _mm512_loadu_si512(engine.ranges_512[i].0.as_ptr() as *const _);
+            let upper_v = _mm512_loadu_si512(engine.ranges_512[i].1.as_ptr() as *const _);
+            let lit_v = _mm512_loadu_si512(engine.ranges_512[i].2.as_ptr() as *const _);
 
             let above_lower = _mm512_cmpeq_epi8_mask(_mm512_max_epu8(chunk, lower_v), chunk);
             let below_upper = _mm512_cmpeq_epi8_mask(_mm512_min_epu8(chunk, upper_v), chunk);
@@ -112,7 +125,7 @@ unsafe fn process_chunk_avx512(
             accumulator = _mm512_or_si512(accumulator, _mm512_maskz_mov_epi8(in_range, lit_v));
         }
 
-        // Apply chunk filter (between detection and decode)
+        // Apply chunk filter
         if has_filter {
             let mut acc_bytes = [0u8; VBS];
             _mm512_storeu_si512(acc_bytes.as_mut_ptr() as *mut _, accumulator);
@@ -126,108 +139,35 @@ unsafe fn process_chunk_avx512(
             return count;
         }
 
-        // Decode using vpcompressb
-        count = decode_avx512(accumulator, nonzero, base_offset, storage, count);
+        // Decode: vpcompressb + bulk write
+        let compressed = _mm512_maskz_compress_epi8(nonzero, accumulator);
+        let match_count = nonzero.count_ones() as usize;
 
-        count
-    }
-}
+        // Bulk store compressed literals directly into storage
+        let lit_start = storage.literals.len();
+        let pos_start = storage.positions.len();
 
-/// Full 64-byte shuffle via vpermb (AVX-512 VBMI).
-///
-/// Unlike AVX2's vpshufb, vpermb uses the full byte value (mod 64) as index
-/// into the 64-byte source vector. The 16-entry LUT is replicated 4x to fill
-/// 64 bytes. We mask the input to low nibble before shuffling.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
-#[inline]
-unsafe fn shuffle_avx512(
-    input: __m512i,
-    low_lut: &[u8; 16],
-    high_lut: &[u8; 16],
-    low_mask: __m512i,
-) -> __m512i {
-    unsafe {
-        // Replicate 16-byte LUT 4x to fill 512-bit vector
-        let lo_lut = broadcast_lut_512(low_lut);
-        let hi_lut = broadcast_lut_512(high_lut);
+        // Extend vecs by match_count (no per-element bounds check)
+        storage.literals.reserve(match_count);
+        storage.positions.reserve(match_count);
 
-        // Low nibble lookup: vpermb uses full byte as index (mod 64)
-        // Since LUT is replicated 4x and we mask to [0,15], indices are correct
-        let lo_nibble = _mm512_and_si512(input, low_mask);
-        let lo_result = _mm512_permutexvar_epi8(lo_nibble, lo_lut);
+        // Write compressed literals in bulk
+        let lit_ptr = storage.literals.as_mut_ptr().add(lit_start);
+        _mm512_storeu_si512(lit_ptr as *mut _, compressed);
+        storage.literals.set_len(lit_start + match_count);
 
-        // High nibble lookup
-        let hi_nibble = _mm512_and_si512(_mm512_srli_epi16(input, 4), low_mask);
-        let hi_result = _mm512_permutexvar_epi8(hi_nibble, hi_lut);
-
-        _mm512_and_si512(lo_result, hi_result)
-    }
-}
-
-/// Clean step using compare-and-blend (same approach as AVX2).
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512bw")]
-#[inline]
-unsafe fn clean_avx512(raw: __m512i, literal_values: &[u8], zero: __m512i) -> __m512i {
-    unsafe {
-        let mut result = zero;
-        for &lit in literal_values {
-            let lit_v = _mm512_set1_epi8(lit as i8);
-            let mask = _mm512_cmpeq_epi8_mask(raw, lit_v);
-            result = _mm512_or_si512(result, _mm512_maskz_mov_epi8(mask, lit_v));
-        }
-        result
-    }
-}
-
-/// Broadcast 16-byte LUT to 512-bit vector (replicated 4x).
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f")]
-#[inline]
-unsafe fn broadcast_lut_512(lut: &[u8; 16]) -> __m512i {
-    unsafe {
-        let lo = _mm_loadu_si128(lut.as_ptr() as *const __m128i);
-        let v256 = _mm256_broadcastsi128_si256(lo);
-        // Broadcast 256→512 by inserting into both halves
-        let mut v512 = _mm512_castsi256_si512(v256);
-        v512 = _mm512_inserti64x4(v512, v256, 1);
-        v512
-    }
-}
-
-/// Decode using vpcompressb: single-instruction extraction of non-zero bytes.
-///
-/// vpcompressb packs the non-zero bytes contiguously. We then extract their
-/// literal values and positions from the mask bits.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512bw,avx512vbmi2")]
-#[inline]
-unsafe fn decode_avx512(
-    accumulator: __m512i,
-    nonzero_mask: u64,
-    base_offset: usize,
-    storage: &mut MatchStorage,
-    mut count: usize,
-) -> usize {
-    unsafe {
-        // Compress non-zero bytes into contiguous positions
-        let compressed = _mm512_maskz_compress_epi8(nonzero_mask, accumulator);
-        let match_count = nonzero_mask.count_ones() as usize;
-
-        // Store compressed literals
-        let mut lit_buf = [0u8; VBS];
-        _mm512_storeu_si512(lit_buf.as_mut_ptr() as *mut _, compressed);
-
-        // Extract positions from mask bits
-        let mut bits = nonzero_mask;
-        for i in 0..match_count {
-            let lane = bits.trailing_zeros() as usize;
-            storage.push((base_offset + lane) as u32, lit_buf[i]);
-            count += 1;
+        // Write positions from bitmask
+        let pos_ptr = storage.positions.as_mut_ptr().add(pos_start);
+        let mut bits = nonzero;
+        let mut i = 0;
+        while bits != 0 {
+            let lane = bits.trailing_zeros() as u32;
+            *pos_ptr.add(i) = base_offset as u32 + lane;
+            i += 1;
             bits &= bits - 1;
         }
+        storage.positions.set_len(pos_start + match_count);
 
-        count
+        count + match_count
     }
 }

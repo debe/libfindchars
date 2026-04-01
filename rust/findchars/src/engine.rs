@@ -19,9 +19,22 @@ pub(crate) struct EngineData {
     /// Per-group high-nibble LUTs (16 entries each).
     pub high_luts: Vec<[u8; 16]>,
     /// Per-group clean LUTs: maps non-literal AND results to zero.
+    /// Scalar backend uses this (256-entry table).
     pub clean_luts: Vec<[u8; 256]>,
     /// Per-group literal byte values (for SIMD compare-and-blend clean step).
     pub group_literals: Vec<Vec<u8>>,
+
+    // --- Pre-broadcast SIMD vectors (built at engine construction) ---
+
+    /// Per-group: low LUT replicated to 64 bytes (4x16) for AVX-512 vpermb.
+    pub low_luts_512: Vec<[u8; 64]>,
+    /// Per-group: high LUT replicated to 64 bytes.
+    pub high_luts_512: Vec<[u8; 64]>,
+    /// Per-group: 64-byte clean LUT for AVX-512 vpermb.
+    /// Index by (raw AND result & 0x3F) → literal value or 0.
+    pub clean_luts_512: Vec<[u8; 64]>,
+    /// Pre-broadcast range vectors: (lower_64, upper_64, lit_64).
+    pub ranges_512: Vec<([u8; 64], [u8; 64], [u8; 64])>,
 
     // --- Round mapping ---
 

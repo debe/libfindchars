@@ -272,11 +272,30 @@ impl EngineBuilder {
             literal_map.insert(name, range_lit);
         }
 
+        // Pre-broadcast SIMD vectors for AVX-512
+        let low_luts_512: Vec<[u8; 64]> = low_luts.iter().map(|lut| replicate_4x(lut)).collect();
+        let high_luts_512: Vec<[u8; 64]> = high_luts.iter().map(|lut| replicate_4x(lut)).collect();
+        let clean_luts_512: Vec<[u8; 64]> = clean_luts.iter().map(|cl| {
+            // Build 64-byte vpermb LUT: index by (raw & 0x3F) → literal or 0
+            let mut lut64 = [0u8; 64];
+            for i in 0..64usize.min(vbs) {
+                lut64[i] = cl[i]; // cl[i] is 0 for non-literals, literal value for literals
+            }
+            lut64
+        }).collect();
+        let ranges_512: Vec<([u8; 64], [u8; 64], [u8; 64])> = ranges.iter().map(|&(lo, hi, lit)| {
+            ([lo; 64], [hi; 64], [lit; 64])
+        }).collect();
+
         let engine_data = EngineData {
             low_luts,
             high_luts,
             clean_luts,
             group_literals,
+            low_luts_512,
+            high_luts_512,
+            clean_luts_512,
+            ranges_512,
             round_group_start,
             round_group_count,
             max_rounds,
@@ -376,6 +395,16 @@ fn find_literal_byte(
         }
     }
     None
+}
+
+/// Replicate a 16-byte array 4x to fill 64 bytes (for AVX-512 vpermb).
+fn replicate_4x(src: &[u8; 16]) -> [u8; 64] {
+    let mut out = [0u8; 64];
+    out[0..16].copy_from_slice(src);
+    out[16..32].copy_from_slice(src);
+    out[32..48].copy_from_slice(src);
+    out[48..64].copy_from_slice(src);
+    out
 }
 
 /// Find the lowest unused literal byte in [1, vbs).
