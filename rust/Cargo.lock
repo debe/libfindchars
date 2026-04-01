@@ -265,6 +265,7 @@ name = "findchars-csv"
 version = "0.1.0"
 dependencies = [
  "findchars",
+ "thiserror",
 ]
 
 [[package]]
