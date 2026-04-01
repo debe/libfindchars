@@ -241,6 +241,7 @@ impl CsvParserBuilder {
             .codepoints("delim", &[self.delimiter])
             .codepoints("lf", &[b'\n'])
             .codepoints("cr", &[b'\r'])
+            // Scalar fallback filter (used by scalar/AVX2 backends)
             .chunk_filter(
                 quote_filter::csv_quote_filter,
                 &["quote"],
@@ -253,9 +254,15 @@ impl CsvParserBuilder {
         let result = builder.build().map_err(|e| CsvError::BuildFailed(e.to_string()))?;
 
         let literals = &result.literals;
+        let quote_lit = literals["quote"];
+        let mut engine = result.engine;
+
+        // Set inline SIMD filter for AVX-512 fast path
+        engine.set_inline_filter(findchars::engine::InlineFilter::CsvQuote { quote_lit });
+
         Ok(CsvParser {
-            engine: result.engine,
-            quote_lit: literals["quote"],
+            engine,
+            quote_lit,
             delim_lit: literals["delim"],
             newline_lit: literals["lf"],
             cr_lit: literals["cr"],

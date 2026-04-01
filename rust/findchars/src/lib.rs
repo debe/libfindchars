@@ -45,6 +45,7 @@ pub struct EngineBuilder {
     backend: Option<SimdBackend>,
     filter_fn: Option<vpa::FilterFn>,
     filter_literal_names: Vec<String>,
+    inline_filter: engine::InlineFilter,
 }
 
 enum BuilderEntry {
@@ -67,6 +68,7 @@ impl EngineBuilder {
             backend: None,
             filter_fn: None,
             filter_literal_names: Vec::new(),
+            inline_filter: engine::InlineFilter::None,
         }
     }
 
@@ -101,6 +103,15 @@ impl EngineBuilder {
     /// Override the SIMD backend (default: auto-detect).
     pub fn backend(mut self, backend: SimdBackend) -> Self {
         self.backend = Some(backend);
+        self
+    }
+
+    /// Set an inline SIMD filter for the AVX-512 fast path.
+    ///
+    /// This bypasses the generic scalar callback and operates directly on
+    /// SIMD registers. Currently only `CsvQuote` is supported.
+    pub fn inline_filter(mut self, filter: engine::InlineFilter) -> Self {
+        self.inline_filter = filter;
         self
     }
 
@@ -307,6 +318,7 @@ impl EngineBuilder {
             filter_literals: self.filter_literal_names.iter()
                 .filter_map(|name| literal_map.get(name).copied())
                 .collect(),
+            inline_filter: self.inline_filter,
             vector_byte_size: vbs,
         };
 

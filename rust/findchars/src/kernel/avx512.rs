@@ -7,7 +7,7 @@
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::engine::{EngineData, MatchStorage};
+use crate::engine::{EngineData, InlineFilter, MatchStorage};
 use crate::vpa;
 
 const VBS: usize = 64;
@@ -125,12 +125,21 @@ unsafe fn process_chunk(
             accumulator = _mm512_or_si512(accumulator, _mm512_maskz_mov_epi8(in_range, lit_v));
         }
 
-        // Apply chunk filter
-        if has_filter {
-            let mut acc_bytes = [0u8; VBS];
-            _mm512_storeu_si512(acc_bytes.as_mut_ptr() as *mut _, accumulator);
-            (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
-            accumulator = _mm512_loadu_si512(acc_bytes.as_ptr() as *const _);
+        // Apply chunk filter — inline SIMD path for known filters
+        match engine.inline_filter {
+            InlineFilter::CsvQuote { quote_lit } => {
+                accumulator = csv_quote_filter_avx512(
+                    accumulator, quote_lit, filter_state,
+                );
+            }
+            InlineFilter::None if has_filter => {
+                // Generic scalar callback fallback
+                let mut acc_bytes = [0u8; VBS];
+                _mm512_storeu_si512(acc_bytes.as_mut_ptr() as *mut _, accumulator);
+                (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
+                accumulator = _mm512_loadu_si512(acc_bytes.as_ptr() as *const _);
+            }
+            InlineFilter::None => {}
         }
 
         // Fast rejection
@@ -171,3 +180,120 @@ unsafe fn process_chunk(
         count + match_count
     }
 }
+
+// --- Inline CSV quote filter using AVX-512 vectorized prefix XOR ---
+
+/// Precomputed shift-right-by-N index vectors for vpermb-based Hillis-Steele.
+/// For shift-right-by-N: lane i reads from lane (i - N). The first N lanes
+/// are masked to zero by the kmask.
+const fn make_shift_indices(n: usize) -> [u8; 64] {
+    let mut idx = [0u8; 64];
+    let mut i = 0;
+    while i < 64 {
+        if i >= n {
+            idx[i] = (i - n) as u8;
+        }
+        // First N entries are 0 but will be masked
+        i += 1;
+    }
+    idx
+}
+
+static SHIFT_1: [u8; 64] = make_shift_indices(1);
+static SHIFT_2: [u8; 64] = make_shift_indices(2);
+static SHIFT_4: [u8; 64] = make_shift_indices(4);
+static SHIFT_8: [u8; 64] = make_shift_indices(8);
+static SHIFT_16: [u8; 64] = make_shift_indices(16);
+static SHIFT_32: [u8; 64] = make_shift_indices(32);
+
+/// Mask constants: bits [N..63] set, bits [0..N-1] clear.
+const MASK_1: u64 = !0u64 << 1;     // 0xFFFF_FFFF_FFFF_FFFE
+const MASK_2: u64 = !0u64 << 2;
+const MASK_4: u64 = !0u64 << 4;
+const MASK_8: u64 = !0u64 << 8;
+const MASK_16: u64 = !0u64 << 16;
+const MASK_32: u64 = !0u64 << 32;
+
+/// AVX-512 vectorized prefix XOR (Hillis-Steele, 6 steps).
+///
+/// Computes inclusive prefix XOR: `result[i] = v[0] ^ v[1] ^ ... ^ v[i]`
+/// in 12 instructions (6 × permutexvar + 6 × xor).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
+#[inline]
+unsafe fn prefix_xor_512(v: __m512i) -> __m512i {
+    unsafe {
+        let idx1 = _mm512_loadu_si512(SHIFT_1.as_ptr() as *const _);
+        let idx2 = _mm512_loadu_si512(SHIFT_2.as_ptr() as *const _);
+        let idx4 = _mm512_loadu_si512(SHIFT_4.as_ptr() as *const _);
+        let idx8 = _mm512_loadu_si512(SHIFT_8.as_ptr() as *const _);
+        let idx16 = _mm512_loadu_si512(SHIFT_16.as_ptr() as *const _);
+        let idx32 = _mm512_loadu_si512(SHIFT_32.as_ptr() as *const _);
+
+        let mut r = v;
+        r = _mm512_xor_si512(r, _mm512_maskz_permutexvar_epi8(MASK_1, idx1, r));
+        r = _mm512_xor_si512(r, _mm512_maskz_permutexvar_epi8(MASK_2, idx2, r));
+        r = _mm512_xor_si512(r, _mm512_maskz_permutexvar_epi8(MASK_4, idx4, r));
+        r = _mm512_xor_si512(r, _mm512_maskz_permutexvar_epi8(MASK_8, idx8, r));
+        r = _mm512_xor_si512(r, _mm512_maskz_permutexvar_epi8(MASK_16, idx16, r));
+        r = _mm512_xor_si512(r, _mm512_maskz_permutexvar_epi8(MASK_32, idx32, r));
+        r
+    }
+}
+
+/// Inline CSV quote filter operating directly on AVX-512 registers.
+///
+/// 1. Extract quote mask from accumulator
+/// 2. Prefix XOR (Hillis-Steele) → inside/outside toggle
+/// 3. Apply carry from previous chunk
+/// 4. Zero structural chars inside quotes
+///
+/// Total: ~20 AVX-512 instructions, no store/reload to memory.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
+#[inline]
+unsafe fn csv_quote_filter_avx512(
+    accumulator: __m512i,
+    quote_lit: u8,
+    filter_state: &mut vpa::FilterState,
+) -> __m512i {
+    unsafe {
+        let quote_v = _mm512_set1_epi8(quote_lit as i8);
+        let all_ones = _mm512_set1_epi8(-1); // 0xFF
+
+        // 1. Quote mask: kmask where accumulator == quote_lit
+        let is_quote: u64 = _mm512_cmpeq_epi8_mask(accumulator, quote_v);
+
+        // Fast path: no quotes and no carry
+        if is_quote == 0 && filter_state[0] == 0 {
+            return accumulator;
+        }
+
+        // 2. Build quote marker vector: 0xFF at quote positions
+        let quote_markers = _mm512_maskz_mov_epi8(is_quote, all_ones);
+
+        // 3. Prefix XOR → inside/outside toggle
+        let mut inside = prefix_xor_512(quote_markers);
+
+        // 4. Apply carry from previous chunk
+        if filter_state[0] != 0 {
+            inside = _mm512_xor_si512(inside, all_ones); // flip all
+        }
+
+        // 5. Update carry: extract last byte (lane 63)
+        let inside_mask: u64 = _mm512_test_epi8_mask(inside, inside);
+        filter_state[0] = if (inside_mask >> 63) & 1 != 0 { 1 } else { 0 };
+
+        // 6. Kill structural chars inside quotes
+        // structural = nonzero AND not-quote
+        let is_nonzero: u64 = _mm512_test_epi8_mask(accumulator, accumulator);
+        let is_structural = is_nonzero & !is_quote;
+        // inside (as kmask)
+        let is_inside: u64 = _mm512_test_epi8_mask(inside, inside);
+        // kill = structural AND inside
+        let kill = is_structural & is_inside;
+        // Zero killed lanes: keep everything except kill positions
+        _mm512_maskz_mov_epi8(!kill, accumulator)
+    }
+}
+

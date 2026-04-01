@@ -65,11 +65,23 @@ pub(crate) struct EngineData {
     pub filter_fn: vpa::FilterFn,
     /// Filter literal bindings.
     pub filter_literals: vpa::FilterLiterals,
+    /// Inline SIMD filter for AVX-512 (bypasses scalar callback).
+    pub inline_filter: InlineFilter,
 
     // --- Platform ---
 
     /// Logical vector byte size for this engine.
     pub vector_byte_size: usize,
+}
+
+/// Inline SIMD filter — dispatched inside the AVX-512 chunk loop.
+/// Avoids the store→callback→reload roundtrip of the generic FilterFn path.
+#[derive(Debug, Clone, Copy)]
+pub enum InlineFilter {
+    /// No filter.
+    None,
+    /// CSV quote filter: prefix XOR toggle, zero structural chars inside quotes.
+    CsvQuote { quote_lit: u8 },
 }
 
 /// Type alias for the find function pointer.
@@ -93,6 +105,11 @@ pub struct FindEngine {
 impl FindEngine {
     pub(crate) fn new(data: EngineData, find_fn: FindFn) -> Self {
         Self { data, find_fn }
+    }
+
+    /// Set the inline SIMD filter (for AVX-512 fast path).
+    pub fn set_inline_filter(&mut self, filter: InlineFilter) {
+        self.data.inline_filter = filter;
     }
 
     /// Scan `data` for configured characters, writing matches into `storage`.
