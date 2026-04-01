@@ -184,42 +184,30 @@ unsafe fn clean_avx2(raw: __m256i, literal_values: &[u8], zero: __m256i) -> __m2
     result
 }
 
-// --- Inline CSV quote filter using AVX2 vectorized prefix XOR ---
+// --- Inline CSV quote filter for AVX2 using Hillis-Steele prefix XOR ---
+//
+// AVX2 uses Hillis-Steele (not CLMUL) because the bitmask-to-byte expansion
+// needed after CLMUL is more expensive than the 5-step shift-XOR chain.
+// AVX-512 uses CLMUL because it has native kmask operations (no expansion).
 
 /// AVX2 prefix XOR (Hillis-Steele, 5 steps for 32 bytes).
-///
-/// Uses cross-lane byte shift via permute2x128 + alignr.
-/// Each step: r ^= shift_right(r, 2^k)
+/// Cross-lane byte shift via permute2x128 + alignr.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn prefix_xor_256(v: __m256i) -> __m256i {
-    {
-        let zero = _mm256_setzero_si256();
-
-        // Step 1: shift right by 1
-        let cross = _mm256_permute2x128_si256(zero, v, 0x03);
-        let mut r = _mm256_xor_si256(v, _mm256_alignr_epi8(v, cross, 15));
-
-        // Step 2: shift right by 2
-        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
-        r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 14));
-
-        // Step 3: shift right by 4
-        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
-        r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 12));
-
-        // Step 4: shift right by 8
-        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
-        r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 8));
-
-        // Step 5: shift right by 16
-        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
-        r = _mm256_xor_si256(r, cross);
-
-        r
-    }
+    let zero = _mm256_setzero_si256();
+    let cross = _mm256_permute2x128_si256(zero, v, 0x03);
+    let mut r = _mm256_xor_si256(v, _mm256_alignr_epi8(v, cross, 15));
+    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 14));
+    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 12));
+    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 8));
+    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    _mm256_xor_si256(r, cross)
 }
 
 /// Inline CSV quote filter for AVX2.
@@ -236,39 +224,23 @@ unsafe fn csv_quote_filter_avx2(
         let all_ones = _mm256_set1_epi8(-1);
         let zero = _mm256_setzero_si256();
 
-        // 1. Quote positions
         let is_quote = _mm256_cmpeq_epi8(accumulator, quote_v);
-
-        // Fast path: no quotes and no carry
         let quote_bits = _mm256_movemask_epi8(is_quote) as u32;
         if quote_bits == 0 && filter_state[0] == 0 {
             return accumulator;
         }
 
-        // 2. Build quote markers: 0xFF at quote positions
         let quote_markers = _mm256_and_si256(is_quote, all_ones);
-
-        // 3. Prefix XOR
         let mut inside = prefix_xor_256(quote_markers);
-
-        // 4. Apply carry
         if filter_state[0] != 0 {
             inside = _mm256_xor_si256(inside, all_ones);
         }
-
-        // 5. Update carry: extract byte 31 (last byte)
-        // movemask gives bit 31 for byte 31's sign bit; inside is 0xFF or 0x00
         let inside_bits = _mm256_movemask_epi8(inside) as u32;
-        filter_state[0] = if (inside_bits >> 31) & 1 != 0 { 1 } else { 0 };
+        filter_state[0] = ((inside_bits >> 31) & 1) as i64;
 
-        // 6. Kill structural inside quotes
-        // structural = nonzero AND not-quote
-        let is_nonzero = _mm256_cmpeq_epi8(accumulator, zero);
-        let is_nonzero = _mm256_andnot_si256(is_nonzero, all_ones); // invert: 0xFF where nonzero
-        let is_structural = _mm256_andnot_si256(is_quote, is_nonzero); // nonzero AND NOT quote
-        let is_inside = inside; // 0xFF where inside
-
-        let kill = _mm256_and_si256(is_structural, is_inside);
-        _mm256_andnot_si256(kill, accumulator) // acc AND NOT kill
+        let is_nonzero = _mm256_andnot_si256(_mm256_cmpeq_epi8(accumulator, zero), all_ones);
+        let is_structural = _mm256_andnot_si256(is_quote, is_nonzero);
+        let kill = _mm256_and_si256(is_structural, inside);
+        _mm256_andnot_si256(kill, accumulator)
     }
 }
