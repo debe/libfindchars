@@ -72,10 +72,13 @@ impl SimdBackend {
             SimdBackend::Avx512 => |engine, data, storage| {
                 unsafe { avx512::find_avx512(engine, data, storage) }
             },
-            SimdBackend::Neon => {
-                // TODO: Phase 6
-                scalar::find_scalar
-            }
+            #[cfg(target_arch = "aarch64")]
+            SimdBackend::Neon => |engine, data, storage| {
+                // SAFETY: NEON is always available on aarch64
+                unsafe { neon::find_neon(engine, data, storage) }
+            },
+            #[cfg(not(target_arch = "aarch64"))]
+            SimdBackend::Neon => scalar::find_scalar,
             SimdBackend::Scalar => scalar::find_scalar,
             #[cfg(not(target_arch = "x86_64"))]
             SimdBackend::Avx2 | SimdBackend::Avx512 => scalar::find_scalar,
