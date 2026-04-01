@@ -82,5 +82,33 @@ fn csv_sweep_field_len(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, csv_sweep_columns, csv_sweep_quotes, csv_sweep_field_len);
+fn csv_backend_compare(c: &mut Criterion) {
+    let mut group = c.benchmark_group("csv_backend_compare");
+
+    let data = generate_csv_data(DATA_SIZE, 10, 5, 16, SEED);
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    for &(name, backend) in &[
+        ("avx512", findchars::SimdBackend::Avx512),
+        ("avx2", findchars::SimdBackend::Avx2),
+        ("scalar", findchars::SimdBackend::Scalar),
+    ] {
+        let parser = CsvParser::builder()
+            .has_header(true)
+            .backend(backend)
+            .build()
+            .unwrap();
+
+        group.bench_function(name, |b| {
+            let mut storage = MatchStorage::new(data.len() / 4);
+            b.iter(|| {
+                let r = parser.parse(black_box(&data), &mut storage).unwrap();
+                black_box(r.row_count())
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, csv_sweep_columns, csv_sweep_quotes, csv_sweep_field_len, csv_backend_compare);
 criterion_main!(benches);
