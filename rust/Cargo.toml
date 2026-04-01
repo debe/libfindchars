@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "findchars",
+    "findchars-solver",
+    "findchars-csv",
+    "findchars-bench",
+    "findchars-examples",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+repository = "https://github.com/debe/libfindchars"
+
+[workspace.dependencies]
+findchars = { path = "findchars" }
+findchars-solver = { path = "findchars-solver" }
+findchars-csv = { path = "findchars-csv" }
+thiserror = "2"

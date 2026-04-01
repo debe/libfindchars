@@ -1,0 +1,24 @@
+[package]
+name = "findchars-bench"
+description = "Benchmarks for findchars"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+findchars.workspace = true
+findchars-csv.workspace = true
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "sweep"
+harness = false
+
+[[bench]]
+name = "csv_sweep"
+harness = false

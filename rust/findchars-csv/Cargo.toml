@@ -1,0 +1,11 @@
+[package]
+name = "findchars-csv"
+description = "SIMD-accelerated CSV parser built on findchars"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+findchars.workspace = true

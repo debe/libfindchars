@@ -1,0 +1,12 @@
+[package]
+name = "findchars"
+description = "High-performance SIMD character detection in byte sequences"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+findchars-solver.workspace = true

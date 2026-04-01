@@ -1,0 +1,13 @@
+[package]
+name = "findchars-examples"
+description = "Usage examples for findchars"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+findchars.workspace = true
+findchars-csv.workspace = true
