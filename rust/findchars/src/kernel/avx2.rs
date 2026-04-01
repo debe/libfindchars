@@ -80,12 +80,17 @@ unsafe fn process_chunk_avx2(
     unsafe {
         let mut accumulator = zero;
 
-        // Apply each shuffle group
-        for g in 0..engine.group_count {
-            let raw = shuffle_avx2(chunk, &engine.low_luts[g], &engine.high_luts[g], low_mask);
-            let cleaned = clean_avx2(raw, &engine.group_literals[g], zero);
-            accumulator = _mm256_or_si256(accumulator, cleaned);
+        // Apply round 0 groups (ASCII detection)
+        if !engine.round_group_count.is_empty() {
+            let r0_start = engine.round_group_start[0];
+            let r0_count = engine.round_group_count[0];
+            for g in r0_start..r0_start + r0_count {
+                let raw = shuffle_avx2(chunk, &engine.low_luts[g], &engine.high_luts[g], low_mask);
+                let cleaned = clean_avx2(raw, &engine.group_literals[g], zero);
+                accumulator = _mm256_or_si256(accumulator, cleaned);
+            }
         }
+        // TODO: multi-round UTF-8 gating in AVX2
 
         // Apply range operations
         for &(lower, upper, lit) in &engine.ranges {

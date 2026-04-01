@@ -10,20 +10,42 @@ pub struct BuildResult {
 
 /// Internal engine configuration produced by the builder.
 pub(crate) struct EngineData {
+    // --- Per-group shuffle data (flat across all rounds) ---
+
     /// Per-group low-nibble LUTs (16 entries each).
     pub low_luts: Vec<[u8; 16]>,
     /// Per-group high-nibble LUTs (16 entries each).
     pub high_luts: Vec<[u8; 16]>,
     /// Per-group clean LUTs: maps non-literal AND results to zero.
-    /// Index by AND result byte → 0 if not a literal, literal value if it is.
-    /// Used by the scalar backend.
     pub clean_luts: Vec<[u8; 256]>,
     /// Per-group literal byte values (for SIMD compare-and-blend clean step).
     pub group_literals: Vec<Vec<u8>>,
-    /// Number of shuffle groups.
-    pub group_count: usize,
+
+    // --- Round mapping ---
+
+    /// Start index in the flat group arrays for each round.
+    pub round_group_start: Vec<usize>,
+    /// Number of groups in each round.
+    pub round_group_count: Vec<usize>,
+    /// Total number of detection rounds (1 for ASCII-only, 2-4 for multi-byte).
+    pub max_rounds: usize,
+
+    // --- Multi-byte charspecs ---
+
+    /// Per-charspec: expected literal byte in each round.
+    pub charspec_round_lits: Vec<Vec<u8>>,
+    /// Per-charspec: byte length (2, 3, or 4).
+    pub charspec_byte_lens: Vec<usize>,
+    /// Per-charspec: literal byte output when all rounds match.
+    pub charspec_final_lits: Vec<u8>,
+
+    // --- Range operations ---
+
     /// Range operations: (lower bound, upper bound, literal byte).
     pub ranges: Vec<(u8, u8, u8)>,
+
+    // --- Platform ---
+
     /// Logical vector byte size for this engine.
     pub vector_byte_size: usize,
 }

@@ -41,6 +41,8 @@ pub struct AsciiFindMask {
     pub high_nibble_mask: [u8; 16],
     /// Mapping from target byte to assigned literal value.
     pub literal_map: Vec<(u8, u8)>,
+    /// Mapping from literal name to assigned literal value.
+    pub name_literal_map: std::collections::HashMap<String, u8>,
 }
 
 impl AsciiFindMask {

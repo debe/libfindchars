@@ -162,9 +162,11 @@ impl LiteralCompiler {
 
                 // Extract literal assignments
                 let mut literal_map = Vec::new();
+                let mut name_literal_map = std::collections::HashMap::new();
                 for (lit_idx, literal) in group.literals.iter().enumerate() {
                     let lit_val =
                         model.eval(&lit_vars[lit_idx], true).unwrap().as_u64().unwrap() as u8;
+                    name_literal_map.insert(literal.name.clone(), lit_val);
                     for &target_byte in &literal.chars {
                         literal_map.push((target_byte, lit_val));
                     }
@@ -174,6 +176,7 @@ impl LiteralCompiler {
                     low_nibble_mask: low_mask,
                     high_nibble_mask: high_mask,
                     literal_map,
+                    name_literal_map,
                 })
             }
             SatResult::Unsat => Err("unsatisfiable: no valid LUT pair exists for this group".into()),
