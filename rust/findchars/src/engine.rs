@@ -11,6 +11,7 @@ pub struct BuildResult {
 }
 
 /// Internal engine configuration produced by the builder.
+#[allow(dead_code)]
 pub(crate) struct EngineData {
     // --- Per-group shuffle data (flat across all rounds) ---
 

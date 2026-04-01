@@ -128,7 +128,7 @@ fn apply_round_scalar(engine: &EngineData, byte: u8, round: usize) -> u8 {
 #[inline(always)]
 fn csv_quote_filter_scalar(acc: &mut [u8], quote_lit: u8, state: &mut vpa::FilterState) {
     // Fast path: scan for any quotes
-    if state[0] == 0 && !acc.iter().any(|&b| b == quote_lit) {
+    if state[0] == 0 && !acc.contains(&quote_lit) {
         return;
     }
 

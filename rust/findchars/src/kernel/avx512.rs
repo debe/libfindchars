@@ -84,7 +84,7 @@ unsafe fn process_chunk(
     has_filter: bool,
     filter_state: &mut vpa::FilterState,
     storage: &mut MatchStorage,
-    mut count: usize,
+    count: usize,
 ) -> usize {
     unsafe {
         let mut accumulator = _mm512_setzero_si512();

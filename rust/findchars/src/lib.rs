@@ -242,23 +242,21 @@ impl EngineBuilder {
         for (e, entry) in resolved.iter().enumerate() {
             if entry.is_ascii_group {
                 // ASCII: literal from round 0
-                if let Some(ref name) = literal_names[e][0] {
-                    if let Some(lit) = find_literal_byte(&round_mask_groups, 0, name) {
+                if let Some(ref name) = literal_names[e][0]
+                    && let Some(lit) = find_literal_byte(&round_mask_groups, 0, name) {
                         literal_map.insert(entry.name.clone(), lit);
                     }
-                }
             } else {
                 // Multi-byte: collect per-round literals, build charspec
                 let byte_len = entry.utf8_bytes.len();
                 let mut rl = Vec::with_capacity(byte_len);
                 let mut final_lit = 0u8;
                 for r in 0..byte_len {
-                    if let Some(name) = &literal_names[e][r] {
-                        if let Some(lit) = find_literal_byte(&round_mask_groups, r, name) {
+                    if let Some(name) = &literal_names[e][r]
+                        && let Some(lit) = find_literal_byte(&round_mask_groups, r, name) {
                             rl.push(lit);
                             final_lit = lit; // last round's literal is the output
                         }
-                    }
                 }
                 if rl.len() == byte_len {
                     charspec_byte_lens.push(byte_len);
@@ -274,7 +272,7 @@ impl EngineBuilder {
         let mut ranges = Vec::new();
         for (name, from, to) in range_entries {
             let range_lit = allocate_literal(&used_lits, vbs)
-                .ok_or_else(|| FindCharsError::NamespaceExceeded {
+                .ok_or(FindCharsError::NamespaceExceeded {
                     configured: total_literals,
                     max: max_lits,
                 })?;
@@ -284,8 +282,8 @@ impl EngineBuilder {
         }
 
         // Pre-broadcast SIMD vectors for AVX-512
-        let low_luts_512: Vec<[u8; 64]> = low_luts.iter().map(|lut| replicate_4x(lut)).collect();
-        let high_luts_512: Vec<[u8; 64]> = high_luts.iter().map(|lut| replicate_4x(lut)).collect();
+        let low_luts_512: Vec<[u8; 64]> = low_luts.iter().map(replicate_4x).collect();
+        let high_luts_512: Vec<[u8; 64]> = high_luts.iter().map(replicate_4x).collect();
         let clean_luts_512: Vec<[u8; 64]> = clean_luts.iter().map(|cl| {
             // Build 64-byte vpermb LUT: index by (raw & 0x3F) → literal or 0
             let mut lut64 = [0u8; 64];
@@ -373,18 +371,16 @@ fn collect_per_round_literals(
 
     for (e, entry) in entries.iter().enumerate() {
         if entry.is_ascii_group {
-            if let Some(name) = &literal_names[e][0] {
-                if seen_per_round[0].insert(name.clone()) {
+            if let Some(name) = &literal_names[e][0]
+                && seen_per_round[0].insert(name.clone()) {
                     per_round[0].push(ByteLiteral::new(name, entry.utf8_bytes.clone()));
                 }
-            }
         } else {
             for r in 0..entry.utf8_bytes.len() {
-                if let Some(name) = &literal_names[e][r] {
-                    if seen_per_round[r].insert(name.clone()) {
+                if let Some(name) = &literal_names[e][r]
+                    && seen_per_round[r].insert(name.clone()) {
                         per_round[r].push(ByteLiteral::new(name, vec![entry.utf8_bytes[r]]));
                     }
-                }
             }
         }
     }

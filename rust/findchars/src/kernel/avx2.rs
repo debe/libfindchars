@@ -173,49 +173,18 @@ unsafe fn shuffle_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn clean_avx2(raw: __m256i, literal_values: &[u8], zero: __m256i) -> __m256i {
-    unsafe {
-        let mut result = zero;
-        for &lit in literal_values {
-            let lit_v = _mm256_set1_epi8(lit as i8);
-            let mask = _mm256_cmpeq_epi8(raw, lit_v);
-            result = _mm256_or_si256(result, _mm256_and_si256(mask, lit_v));
-        }
-        result
+    let mut result = zero;
+    for &lit in literal_values {
+        let lit_v = _mm256_set1_epi8(lit as i8);
+        let mask = _mm256_cmpeq_epi8(raw, lit_v);
+        result = _mm256_or_si256(result, _mm256_and_si256(mask, lit_v));
     }
+    result
 }
 
 // --- Inline CSV quote filter using AVX2 vectorized prefix XOR ---
-
-/// Cross-lane byte shift right by N for AVX2 (256-bit).
-///
-/// AVX2 has no cross-lane byte shuffle. The trick:
-/// 1. `_mm256_permute2x128_si256(zero, v, 0x03)` moves low lane to high, zeros low
-/// 2. `_mm256_alignr_epi8(v, cross, 16-N)` shifts within each lane with cross-lane feed
-///
-/// For N >= 16: just use permute2x128 + alignr differently.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn shift_right_avx2(v: __m256i, zero: __m256i) -> [__m256i; 5] {
-    unsafe {
-        // cross = [zero_lo | v_lo] — feeds the low 128 bits of v into the high lane
-        let cross = _mm256_permute2x128_si256(zero, v, 0x03);
-
-        // Shift by 1: alignr(v, cross, 15) within each 128-bit lane
-        let s1 = _mm256_alignr_epi8(v, cross, 15);
-        // Shift by 2
-        let s2 = _mm256_alignr_epi8(v, cross, 14);
-        // Shift by 4
-        let s4 = _mm256_alignr_epi8(v, cross, 12);
-        // Shift by 8
-        let s8 = _mm256_alignr_epi8(v, cross, 8);
-        // Shift by 16: just the cross vector itself (low lane zeroed, high = original low)
-        let s16 = cross;
-
-        [s1, s2, s4, s8, s16]
-    }
-}
 
 /// AVX2 prefix XOR (Hillis-Steele, 5 steps for 32 bytes).
 ///
@@ -224,8 +193,9 @@ unsafe fn shift_right_avx2(v: __m256i, zero: __m256i) -> [__m256i; 5] {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn prefix_xor_256(v: __m256i) -> __m256i {
-    unsafe {
+    {
         let zero = _mm256_setzero_si256();
 
         // Step 1: shift right by 1

@@ -239,8 +239,8 @@ impl CsvParserBuilder {
         let mut builder = EngineBuilder::new()
             .codepoints("quote", &[self.quote])
             .codepoints("delim", &[self.delimiter])
-            .codepoints("lf", &[b'\n'])
-            .codepoints("cr", &[b'\r'])
+            .codepoints("lf", b"\n")
+            .codepoints("cr", b"\r")
             // Scalar fallback filter (used by scalar/AVX2 backends)
             .chunk_filter(
                 quote_filter::csv_quote_filter,
