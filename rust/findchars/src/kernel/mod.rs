@@ -2,6 +2,10 @@
 
 #[cfg(target_arch = "x86_64")]
 pub mod avx2;
+#[cfg(target_arch = "x86_64")]
+pub mod avx512;
+#[cfg(target_arch = "aarch64")]
+pub mod neon;
 pub mod scalar;
 
 use crate::engine::FindFn;
@@ -24,7 +28,10 @@ impl SimdBackend {
     pub fn detect() -> Self {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx512bw") && is_x86_feature_detected!("avx512vbmi") {
+            if is_x86_feature_detected!("avx512bw")
+                && is_x86_feature_detected!("avx512vbmi")
+                && is_x86_feature_detected!("avx512vbmi2")
+            {
                 return SimdBackend::Avx512;
             }
             if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("ssse3") {
@@ -61,17 +68,17 @@ impl SimdBackend {
                 // SAFETY: AVX2 availability is checked at engine build time
                 unsafe { avx2::find_avx2(engine, data, storage) }
             },
-            SimdBackend::Avx512 => {
-                // TODO: Phase 6
-                scalar::find_scalar
-            }
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx512 => |engine, data, storage| {
+                unsafe { avx512::find_avx512(engine, data, storage) }
+            },
             SimdBackend::Neon => {
                 // TODO: Phase 6
                 scalar::find_scalar
             }
             SimdBackend::Scalar => scalar::find_scalar,
             #[cfg(not(target_arch = "x86_64"))]
-            SimdBackend::Avx2 => scalar::find_scalar,
+            SimdBackend::Avx2 | SimdBackend::Avx512 => scalar::find_scalar,
         }
     }
 }

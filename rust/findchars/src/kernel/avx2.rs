@@ -8,6 +8,7 @@
 use std::arch::x86_64::*;
 
 use crate::engine::{EngineData, MatchStorage};
+use crate::vpa;
 
 /// Vector byte size for AVX2.
 const VBS: usize = 32;
@@ -34,25 +35,24 @@ pub(crate) unsafe fn find_avx2(
         let low_mask = _mm256_set1_epi8(0x0F);
         let zero = _mm256_setzero_si256();
 
+        let has_filter = (engine.filter_fn as *const ()) != (vpa::no_op_filter as *const ());
+        let mut filter_state: vpa::FilterState = [0i64; 8];
         let mut count = 0usize;
         let mut offset = 0usize;
 
-        // Process full 32-byte chunks
         while offset + VBS <= len {
             let chunk = _mm256_loadu_si256(data.as_ptr().add(offset) as *const __m256i);
-            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, storage, count);
+            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, VBS, has_filter, &mut filter_state, storage, count);
             offset += VBS;
         }
 
-        // Handle tail (< 32 bytes) — pad with zeros
         if offset < len {
             let remaining = len - offset;
             let mut buf = [0u8; VBS];
             buf[..remaining].copy_from_slice(&data[offset..]);
             let chunk = _mm256_loadu_si256(buf.as_ptr() as *const __m256i);
             let prev_count = storage.len();
-            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, storage, count);
-            // Remove matches beyond valid data range
+            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, remaining, has_filter, &mut filter_state, storage, count);
             let valid_end = len as u32;
             while storage.len() > prev_count && *storage.positions.last().unwrap() >= valid_end {
                 storage.positions.pop();
@@ -74,13 +74,16 @@ unsafe fn process_chunk_avx2(
     low_mask: __m256i,
     zero: __m256i,
     base_offset: usize,
+    chunk_len: usize,
+    has_filter: bool,
+    filter_state: &mut vpa::FilterState,
     storage: &mut MatchStorage,
     mut count: usize,
 ) -> usize {
     unsafe {
         let mut accumulator = zero;
 
-        // Apply round 0 groups (ASCII detection)
+        // Apply round 0 groups
         if !engine.round_group_count.is_empty() {
             let r0_start = engine.round_group_start[0];
             let r0_count = engine.round_group_count[0];
@@ -90,19 +93,25 @@ unsafe fn process_chunk_avx2(
                 accumulator = _mm256_or_si256(accumulator, cleaned);
             }
         }
-        // TODO: multi-round UTF-8 gating in AVX2
 
-        // Apply range operations
+        // Range operations
         for &(lower, upper, lit) in &engine.ranges {
             let lower_v = _mm256_set1_epi8(lower as i8);
             let upper_v = _mm256_set1_epi8(upper as i8);
             let lit_v = _mm256_set1_epi8(lit as i8);
 
-            // Unsigned compare via max/min
             let above_lower = _mm256_cmpeq_epi8(_mm256_max_epu8(chunk, lower_v), chunk);
             let below_upper = _mm256_cmpeq_epi8(_mm256_min_epu8(chunk, upper_v), chunk);
             let in_range = _mm256_and_si256(above_lower, below_upper);
             accumulator = _mm256_or_si256(accumulator, _mm256_and_si256(in_range, lit_v));
+        }
+
+        // Apply chunk filter
+        if has_filter {
+            let mut acc_bytes = [0u8; VBS];
+            _mm256_storeu_si256(acc_bytes.as_mut_ptr() as *mut __m256i, accumulator);
+            (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
+            accumulator = _mm256_loadu_si256(acc_bytes.as_ptr() as *const __m256i);
         }
 
         // Fast rejection
@@ -110,7 +119,7 @@ unsafe fn process_chunk_avx2(
             return count;
         }
 
-        // Decode non-zero positions
+        // Decode
         let nonzero_mask = _mm256_cmpeq_epi8(accumulator, _mm256_setzero_si256());
         let mut bits = !(_mm256_movemask_epi8(nonzero_mask) as u32);
 
