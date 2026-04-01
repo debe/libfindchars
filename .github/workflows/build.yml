@@ -34,3 +34,19 @@ jobs:
           curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3-x64.so" -o native/libz3.so
           curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3java-x64.so" -o native/libz3java.so
       - run: LD_LIBRARY_PATH=$PWD/native ./mvnw verify
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - run: cargo test -p findchars -p findchars-csv
+      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo bench --workspace --no-run

@@ -9,7 +9,7 @@ This specification defines the observable contract for **libfindchars**, a high-
 | Language | Location   | Runtime        | Maturity   |
 |----------|------------|----------------|------------|
 | Java 25  | `java/`    | JDK Vector API | Production |
-| Rust     | `rust/`    | `std::arch`    | Planned    |
+| Rust     | `rust/`    | `std::arch`    | In progress |
 
 ---
 
@@ -134,9 +134,31 @@ This specification defines the observable contract for **libfindchars**, a high-
 
 | ID | Java Test | Rust Test |
 |----|-----------|-----------|
-| ENGINE-001 | `Utf8EngineTest`, `CompiledEngineTest` | — |
-| ENGINE-005 | `RegexParityTest`, `FuzzRegexParityTest` | — |
-| SOLVE-001 | `LiteralCompilerTest` | — |
-| CSV-001 | `CsvParserTest` | — |
-| COMP-005 | `CompiledEngineTest` | — |
-| VPA-003 | `VpaKernelTest` | — |
+| ENGINE-001 | `Utf8EngineTest`, `CompiledEngineTest` | `engine_test::engine_001` |
+| ENGINE-002 | — | `engine_test::engine_002` |
+| ENGINE-005 | `RegexParityTest`, `FuzzRegexParityTest` | `engine_test::engine_005`, `parity_test` |
+| ENGINE-006 | — | `engine_test::engine_006` |
+| ENGINE-007 | — | `engine_test::engine_007` |
+| ENGINE-008 | — | `engine_test::engine_008` |
+| ENGINE-009 | — | `engine_test::engine_009` |
+| ENGINE-012 | — | `engine_test::engine_012` |
+| ENGINE-015 | — | `engine_test::engine_015` |
+| SOLVE-001 | `LiteralCompilerTest` | `solver::tests` |
+| SOLVE-004 | — | `solver::tests::auto_split` |
+| UTF8-001 | `Utf8EngineTest` | `utf8_test::utf8_001` |
+| UTF8-004 | — | `utf8_test::utf8_004` |
+| UTF8-005 | — | `utf8_test::utf8_005` |
+| UTF8-006 | — | `utf8_test::utf8_006` |
+| UTF8-007 | — | `utf8_test::utf8_007` |
+| VPA-001 | — | `vpa_test::vpa_001` |
+| VPA-003 | `VpaKernelTest` | `vpa_test::vpa_003`, `prefix::tests` |
+| VPA-005 | — | `vpa_test::vpa_005` |
+| CSV-001 | `CsvParserTest` | `csv_test::csv_001` |
+| CSV-003 | — | `csv_test::csv_003` |
+| CSV-005 | — | `csv_test::csv_005` |
+| CSV-007 | — | `csv_test::csv_007` |
+| CSV-009 | — | `csv_test::csv_009` |
+| CSV-010 | — | `csv_test::csv_010` |
+| CSV-013 | — | `csv_test::csv_013` |
+| COMP-005 | `CompiledEngineTest` | `parity_test` (scalar vs AVX2 vs AVX-512) |
+| PERF-001 | `SweepBenchmark` | `sweep::sweep_ascii_count` |

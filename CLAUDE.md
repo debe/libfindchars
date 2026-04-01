@@ -20,6 +20,13 @@ libfindchars/
 │   ├── libfindchars-csv/    # SIMD CSV parser
 │   ├── libfindchars-bench/  # JMH benchmarks
 │   └── libfindchars-examples/ # Usage examples
+├── rust/                    # Rust implementation (stable 1.94+)
+│   ├── Cargo.toml           # Workspace manifest
+│   ├── findchars/           # Core library: engine, SIMD backends, VPA filters
+│   ├── findchars-solver/    # Z3 constraint solver (build-dependency)
+│   ├── findchars-csv/       # SIMD CSV parser
+│   ├── findchars-bench/     # Criterion benchmarks
+│   └── findchars-examples/  # Usage examples
 ├── spec/                    # Language-agnostic specification (73 requirements)
 ├── scripts/                 # Release, benchmark, and analysis scripts
 ├── docs/                    # Performance visualizations and sweep data
@@ -76,6 +83,39 @@ scripts/run-csv-sweep.sh --perfnorm   # With hardware counters (Linux only)
 ```bash
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home
 ```
+
+### Rust Build Commands
+
+All Rust build commands run from the `rust/` directory:
+
+```bash
+# Build entire workspace (requires Rust 1.94+)
+cd rust && cargo build
+
+# Run all tests (excludes slow solver auto-split test)
+cd rust && cargo test -p findchars -p findchars-csv
+
+# Run solver tests (includes Z3, first build compiles Z3 from source ~5 min)
+cd rust && cargo test -p findchars-solver -- --skip auto_split_many
+
+# Run a specific test
+cd rust && cargo test -p findchars --test engine_test engine_005
+
+# Run benchmarks
+cd rust && cargo bench -p findchars-bench --bench sweep
+cd rust && cargo bench -p findchars-bench --bench csv_sweep
+
+# Quick benchmark (short warmup)
+scripts/run-sweep-rust.sh --quick
+scripts/run-csv-sweep-rust.sh --quick
+
+# Clippy
+cd rust && cargo clippy --workspace -- -D warnings
+```
+
+**Important**: The `findchars-solver` crate depends on Z3 via the `z3` crate with `static-link-z3`. The first build downloads and compiles Z3 from source (~5 minutes), cached thereafter. No system Z3 installation required.
+
+**SIMD backends**: Auto-detected at engine construction time. AVX-512 (with VBMI2) preferred, AVX2 fallback, scalar reference. NEON stubbed for aarch64.
 
 ## Module Architecture
 

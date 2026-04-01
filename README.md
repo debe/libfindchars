@@ -9,7 +9,7 @@ libfindchars is a character detection library that can find ASCII and multi-byte
 Use cases are tokenizers, parsers or various pre-processing steps involving fast character detection.
 As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
 
-The Java implementation is production-ready. A Rust port is planned. The language-agnostic [specification](spec/00-index.md) (73 requirements) defines the observable contract that all implementations must satisfy.
+The Java implementation is production-ready. A Rust implementation is in progress (`rust/`). The language-agnostic [specification](spec/00-index.md) (73 requirements) defines the observable contract that all implementations must satisfy.
 
 See the [Benchmark](#benchmark) how fast it is. It typically reaches around **2 GB/s** throughput for pure ASCII
 and **1.5 GB/s** for mixed ASCII/UTF-8 on a single core.
