@@ -4,32 +4,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-libfindchars is a high-performance character detection library for the JVM that uses SIMD instructions (via `jdk.incubator.vector`) to find ASCII and multi-byte UTF-8 characters in byte sequences at ~2 GB/s per core. The Z3 theorem prover solves for optimal shuffle mask configurations at build time; a bytecode-compiled engine executes the operations at runtime.
+libfindchars is a high-performance character detection library that uses SIMD instructions to find ASCII and multi-byte UTF-8 characters in byte sequences at ~2 GB/s per core. A constraint solver finds optimal shuffle mask configurations at build time; a template-specialized engine executes the operations at runtime.
 
-Key innovation: Z3 solves constraint systems (hundreds of bitwise equations) to generate two 16-entry shuffle vectors whose AND yields a unique literal byte for every target character and zero for everything else. A single shuffle group reliably solves ~12 ASCII literals; auto-split doubles that by solving two independent halves.
+Key innovation: the solver finds two 16-entry shuffle vectors whose AND yields a unique literal byte for every target character and zero for everything else. A single shuffle group reliably solves ~12 ASCII literals; auto-split doubles that by solving two independent halves.
+
+## Repository Structure
+
+```
+libfindchars/
+├── java/                    # Java 25 implementation (production)
+│   ├── pom.xml              # Multi-module Maven parent POM
+│   ├── mvnw                 # Maven wrapper
+│   ├── libfindchars-api/    # Runtime engine, API, @Inline annotation
+│   ├── libfindchars-compiler/ # Z3 solver, bytecode inliner
+│   ├── libfindchars-csv/    # SIMD CSV parser
+│   ├── libfindchars-bench/  # JMH benchmarks
+│   └── libfindchars-examples/ # Usage examples
+├── spec/                    # Language-agnostic specification (73 requirements)
+├── scripts/                 # Release, benchmark, and analysis scripts
+├── docs/                    # Performance visualizations and sweep data
+├── .github/                 # CI/CD workflows
+└── .sentrux/                # Architecture constraint rules
+```
+
+## Specification
+
+The `spec/` directory contains the language-agnostic specification (73 requirements across 7 documents). Any conforming implementation (Java, Rust, etc.) must satisfy these requirements.
+
+| File | Prefix | Scope |
+|------|--------|-------|
+| `spec/01-core-engine.md` | ENGINE | Engine interface, SIMD detection, storage |
+| `spec/02-constraint-solver.md` | SOLVE | Nibble matrix, LUT solving, auto-split |
+| `spec/03-utf8-pipeline.md` | UTF8 | Multi-byte detection, gating, decode |
+| `spec/04-vpa-filters.md` | VPA | Chunk filters, prefix XOR/sum |
+| `spec/05-engine-compilation.md` | COMP | Template specialization, parity |
+| `spec/06-csv-parser.md` | CSV | RFC 4180 parsing, zero-copy fields |
+| `spec/07-performance.md` | PERF | Throughput targets, benchmarks |
 
 ## Build Commands
 
+All Java build commands run from the `java/` directory:
+
 ```bash
 # Build entire project (requires JDK 25)
-mvn clean install
+cd java && ./mvnw clean install
 
 # Build without tests
-mvn clean install -DskipTests
+cd java && ./mvnw clean install -DskipTests
 
 # Run all tests
-mvn test
+cd java && ./mvnw test
 
 # Run tests for a specific module
-mvn test -pl libfindchars-compiler
+cd java && ./mvnw test -pl libfindchars-compiler
 
 # Run a single test class
-mvn test -Dtest=LiteralCompilerTest -pl libfindchars-compiler
+cd java && ./mvnw test -Dtest=LiteralCompilerTest -pl libfindchars-compiler
 
 # Run a single test method
-mvn test -Dtest=LiteralCompilerTest#testMethodName -pl libfindchars-compiler
+cd java && ./mvnw test -Dtest=LiteralCompilerTest#testMethodName -pl libfindchars-compiler
 
-# Run CSV sweep benchmark (from root — bench needs reactor for csv dependency)
+# Run CSV sweep benchmark (from repo root — scripts handle cd)
 scripts/run-csv-sweep.sh              # Full: 3D sweep (columns, quote%, field length)
 scripts/run-csv-sweep.sh --quick      # Smoke test (1 fork, 1 warmup, 1 measurement)
 scripts/run-csv-sweep.sh --perfnorm   # With hardware counters (Linux only)
@@ -44,7 +79,7 @@ export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home
 
 ## Module Architecture
 
-Multi-module Maven build (`0.4.0-jdk25-preview`). Dependency graph:
+Multi-module Maven build (`0.4.0-jdk25-preview`). All modules live under `java/`. Dependency graph:
 
 ```
 api (no deps)
@@ -167,17 +202,17 @@ Test classes: `DataGenerationTest`.
 - Triggers: push to main, PRs to main
 - Runner: ubuntu-latest, JDK 25-ea (Temurin), 15-min timeout
 - Z3: Downloads native `.so` files from Maven Central (not bundled on Linux)
-- Build: `LD_LIBRARY_PATH=$PWD/native ./mvnw verify`
+- Build: `cd java && LD_LIBRARY_PATH=$PWD/native ./mvnw verify`
 - Concurrency: cancels in-progress on new push to same ref
 
-**Dependabot**: Weekly Maven dependency updates.
+**Dependabot**: Weekly Maven dependency updates (scans `java/pom.xml`).
 
 ## Scripts
 
 ```bash
-# Release to Maven Central (builds, signs, uploads, tags, creates GitHub release)
-scripts/release.sh 0.4.1-jdk25-preview
-scripts/release.sh --dry-run 0.4.1-jdk25-preview
+# Release Java to Maven Central (builds, signs, uploads, tags, creates GitHub release)
+scripts/release-java.sh 0.4.1-jdk25-preview
+scripts/release-java.sh --dry-run 0.4.1-jdk25-preview
 
 # Parameter sweep benchmarks (~6 min full, ~1 min quick)
 scripts/run-sweep.sh              # Full: 4D sweep (ascii, density, mb, groups)
@@ -193,8 +228,8 @@ scripts/run-csv-sweep.sh --perfnorm   # With hardware counters (Linux only)
 python3 scripts/fit-cost-model.py docs/sweep-data/
 
 # Regenerate plots
-gnuplot libfindchars-bench/sweep-overview.gnuplot
-gnuplot libfindchars-bench/csv-sweep-overview.gnuplot
+gnuplot java/libfindchars-bench/sweep-overview.gnuplot
+gnuplot java/libfindchars-bench/csv-sweep-overview.gnuplot
 ```
 
 ## Releasing
@@ -212,7 +247,7 @@ gnuplot libfindchars-bench/csv-sweep-overview.gnuplot
 
 ## Architecture Constraints
 
-Enforced via `.sentrux/rules.toml`:
+Enforced via `.sentrux/rules.toml` (paths prefixed with `java/`):
 - **Layers**: api (L0) → compiler, csv (L1) → examples, bench (L4)
 - **Boundaries**: api must not depend on compiler/examples/bench; compiler must not depend on examples/bench
 - **No cycles** (max_cycles=0, currently perfect)

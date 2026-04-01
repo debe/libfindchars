@@ -45,11 +45,11 @@ echo "  perfnorm=${PERFNORM:-disabled}"
 if [ "$SKIP_BUILD" = false ]; then
     echo ""
     echo "--- Building ---"
-    mvn clean package -DskipTests -pl libfindchars-bench -am -q
+    ( cd "$ROOT_DIR/java" && ./mvnw clean package -DskipTests -pl libfindchars-bench -am -q )
 fi
 
 # Find the bench jar
-BENCH_JAR=$(ls libfindchars-bench/target/libfindchars-bench-*.jar | head -1)
+BENCH_JAR=$(ls java/libfindchars-bench/target/libfindchars-bench-*.jar | head -1)
 echo ""
 echo "--- Running JMH ($BENCH_JAR) ---"
 
@@ -69,8 +69,8 @@ python3 scripts/parse-csv-sweep.py "$JSON_OUT" docs/csv-sweep-data
 if command -v gnuplot &>/dev/null; then
     echo ""
     echo "--- Generating plots ---"
-    gnuplot libfindchars-bench/csv-sweep-overview.gnuplot && echo "  wrote docs/csv-sweep-overview.png"
-    gnuplot libfindchars-bench/csv-sweep-instructions.gnuplot 2>/dev/null && echo "  wrote docs/csv-sweep-instructions.png" || echo "  skipped csv-sweep-instructions.png (no perfnorm data)"
+    gnuplot java/libfindchars-bench/csv-sweep-overview.gnuplot && echo "  wrote docs/csv-sweep-overview.png"
+    gnuplot java/libfindchars-bench/csv-sweep-instructions.gnuplot 2>/dev/null && echo "  wrote docs/csv-sweep-instructions.png" || echo "  skipped csv-sweep-instructions.png (no perfnorm data)"
 else
     echo ""
     echo "gnuplot not found — skipping plot generation"

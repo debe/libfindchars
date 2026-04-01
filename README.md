@@ -5,9 +5,11 @@
 libfindchars
 ====
 
-libfindchars is a character detection library that can find ASCII and multi-byte UTF-8 characters in byte sequences really fast using SIMD instructions on the JVM.
+libfindchars is a character detection library that can find ASCII and multi-byte UTF-8 characters in byte sequences really fast using SIMD instructions.
 Use cases are tokenizers, parsers or various pre-processing steps involving fast character detection.
 As it heavily utilizes the SIMD instruction set it's more useful when the input is not smaller than the typical vector size e.g. 32 bytes.
+
+The Java implementation is production-ready. A Rust port is planned. The language-agnostic [specification](spec/00-index.md) (73 requirements) defines the observable contract that all implementations must satisfy.
 
 See the [Benchmark](#benchmark) how fast it is. It typically reaches around **2 GB/s** throughput for pure ASCII
 and **1.5 GB/s** for mixed ASCII/UTF-8 on a single core.
@@ -167,7 +169,7 @@ The filter is bytecode-inlined into the engine at build time — zero virtual di
 
 `libfindchars-csv` is the first application of the VPA framework — a SIMD-accelerated CSV parser using only the Stack-1 (`prefixXor`) primitive. Full zero-copy parse reaches **~0.9–1.3 GB/s** on a single core depending on field density, **2–3x faster** than [FastCSV](https://github.com/osiegmar/FastCSV).
 
-> **Note**: `libfindchars-csv` is not yet published to Maven Central. Build from source with `mvn install -pl libfindchars-csv -am`.
+> **Note**: `libfindchars-csv` is not yet published to Maven Central. Build from source with `cd java && ./mvnw install -pl libfindchars-csv -am`.
 
 ```java
 var parser = CsvParser.builder()
@@ -220,7 +222,7 @@ Requires JDK 25 with `--enable-preview` and `--add-modules=jdk.incubator.vector`
 > **Note**: Published artifacts use the version format `{semver}-jdk25-preview` (e.g. `0.4.0-jdk25-preview`) to signal that bytecode is compiled with `--enable-preview` and locked to JDK 25. Consumers must run JDK 25 and pass `--add-modules=jdk.incubator.vector` at runtime.
 
 ```bash
-mvn clean install
+cd java && ./mvnw clean install
 ```
 
 ## Benchmark
@@ -261,10 +263,10 @@ scripts/run-sweep.sh --perfnorm
 scripts/run-sweep.sh --quick
 
 # Regenerate plots / cost model from existing data
-gnuplot libfindchars-bench/sweep-overview.gnuplot
-gnuplot libfindchars-bench/sweep-instructions.gnuplot
-gnuplot libfindchars-bench/sweep-cost-model.gnuplot
-gnuplot libfindchars-bench/sweep-cost-model-combined.gnuplot
+gnuplot java/libfindchars-bench/sweep-overview.gnuplot
+gnuplot java/libfindchars-bench/sweep-instructions.gnuplot
+gnuplot java/libfindchars-bench/sweep-cost-model.gnuplot
+gnuplot java/libfindchars-bench/sweep-cost-model-combined.gnuplot
 python3 scripts/fit-cost-model.py docs/sweep-data/
 ```
 
@@ -291,5 +293,5 @@ scripts/run-csv-sweep.sh --perfnorm
 scripts/run-csv-sweep.sh --quick
 
 # Regenerate plots from existing data
-gnuplot libfindchars-bench/csv-sweep-overview.gnuplot
+gnuplot java/libfindchars-bench/csv-sweep-overview.gnuplot
 ```

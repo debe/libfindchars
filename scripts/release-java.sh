@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+JAVA_DIR="$PROJECT_ROOT/java"
 
 # --- Defaults ---
 DRY_RUN=false
@@ -88,11 +89,12 @@ fi
 
 # --- Set version ---
 info "Setting version to ${VERSION}"
-cd "$PROJECT_ROOT"
+cd "$JAVA_DIR"
 ./mvnw versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true -q
 
 # --- Commit the version bump ---
-git add pom.xml libfindchars-api/pom.xml libfindchars-compiler/pom.xml libfindchars-csv/pom.xml libfindchars-examples/pom.xml libfindchars-bench/pom.xml
+cd "$PROJECT_ROOT"
+git add java/pom.xml java/libfindchars-api/pom.xml java/libfindchars-compiler/pom.xml java/libfindchars-csv/pom.xml java/libfindchars-examples/pom.xml java/libfindchars-bench/pom.xml
 git diff --cached --quiet || git commit -m "release: ${VERSION}"
 
 # --- Build / Deploy ---
@@ -104,6 +106,7 @@ else
     GOAL=deploy
 fi
 
+cd "$JAVA_DIR"
 if ! ./mvnw clean "$GOAL" -Prelease -pl '!libfindchars-csv,!libfindchars-examples,!libfindchars-bench'; then
     info "Build failed — version commit remains, fix and retry or reset"
     exit 1

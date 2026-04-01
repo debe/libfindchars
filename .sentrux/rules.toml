@@ -6,63 +6,63 @@ no_god_files = false     # Allow for now — Utf8EngineTemplate and LiteralCompi
 
 [[layers]]
 name = "api"
-paths = ["libfindchars-api/src/main/java/**/*"]
+paths = ["java/libfindchars-api/src/main/java/**/*"]
 order = 0
 
 [[layers]]
 name = "csv"
-paths = ["libfindchars-csv/src/main/java/**/*"]
+paths = ["java/libfindchars-csv/src/main/java/**/*"]
 order = 1
 
 [[layers]]
 name = "compiler"
-paths = ["libfindchars-compiler/src/main/java/**/*"]
+paths = ["java/libfindchars-compiler/src/main/java/**/*"]
 order = 1
 
 [[layers]]
 name = "examples"
-paths = ["libfindchars-examples/src/main/java/**/*"]
+paths = ["java/libfindchars-examples/src/main/java/**/*"]
 order = 4
 
 [[layers]]
 name = "bench"
-paths = ["libfindchars-bench/src/main/java/**/*"]
+paths = ["java/libfindchars-bench/src/main/java/**/*"]
 order = 4
 
 # API is foundational — examples/bench must not leak back into it
 [[boundaries]]
-from = "libfindchars-api/src/main/java/**/*"
-to = "libfindchars-compiler/src/main/java/**/*"
+from = "java/libfindchars-api/src/main/java/**/*"
+to = "java/libfindchars-compiler/src/main/java/**/*"
 reason = "API must not depend on compiler — dependency flows compiler -> api only"
 
 [[boundaries]]
-from = "libfindchars-api/src/main/java/**/*"
-to = "libfindchars-examples/src/main/java/**/*"
+from = "java/libfindchars-api/src/main/java/**/*"
+to = "java/libfindchars-examples/src/main/java/**/*"
 reason = "API must not depend on examples"
 
 [[boundaries]]
-from = "libfindchars-api/src/main/java/**/*"
-to = "libfindchars-bench/src/main/java/**/*"
+from = "java/libfindchars-api/src/main/java/**/*"
+to = "java/libfindchars-bench/src/main/java/**/*"
 reason = "API must not depend on bench"
 
 # Compiler must not depend on examples or bench
 [[boundaries]]
-from = "libfindchars-compiler/src/main/java/**/*"
-to = "libfindchars-examples/src/main/java/**/*"
+from = "java/libfindchars-compiler/src/main/java/**/*"
+to = "java/libfindchars-examples/src/main/java/**/*"
 reason = "Compiler must not depend on examples"
 
 [[boundaries]]
-from = "libfindchars-compiler/src/main/java/**/*"
-to = "libfindchars-bench/src/main/java/**/*"
+from = "java/libfindchars-compiler/src/main/java/**/*"
+to = "java/libfindchars-bench/src/main/java/**/*"
 reason = "Compiler must not depend on bench"
 
 # Examples and bench must not depend on each other
 [[boundaries]]
-from = "libfindchars-examples/src/main/java/**/*"
-to = "libfindchars-bench/src/main/java/**/*"
+from = "java/libfindchars-examples/src/main/java/**/*"
+to = "java/libfindchars-bench/src/main/java/**/*"
 reason = "Examples must not depend on bench"
 
 [[boundaries]]
-from = "libfindchars-bench/src/main/java/**/*"
-to = "libfindchars-examples/src/main/java/**/*"
+from = "java/libfindchars-bench/src/main/java/**/*"
+to = "java/libfindchars-examples/src/main/java/**/*"
 reason = "Bench must not depend on examples"

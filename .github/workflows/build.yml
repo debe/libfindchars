@@ -14,9 +14,12 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  java:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: java
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-java@v5

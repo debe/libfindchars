@@ -45,11 +45,11 @@ echo "  perfnorm=${PERFNORM:-disabled}"
 if [ "$SKIP_BUILD" = false ]; then
     echo ""
     echo "--- Building ---"
-    mvn clean package -DskipTests -pl libfindchars-bench -am -q
+    ( cd "$ROOT_DIR/java" && ./mvnw clean package -DskipTests -pl libfindchars-bench -am -q )
 fi
 
 # Find the bench jar
-BENCH_JAR=$(ls libfindchars-bench/target/libfindchars-bench-*.jar | head -1)
+BENCH_JAR=$(ls java/libfindchars-bench/target/libfindchars-bench-*.jar | head -1)
 echo ""
 echo "--- Running JMH ($BENCH_JAR) ---"
 
@@ -79,10 +79,10 @@ fi
 if command -v gnuplot &>/dev/null; then
     echo ""
     echo "--- Generating plots ---"
-    gnuplot libfindchars-bench/sweep-overview.gnuplot && echo "  wrote docs/sweep-overview.png"
-    gnuplot libfindchars-bench/sweep-instructions.gnuplot 2>/dev/null && echo "  wrote docs/sweep-instructions.png" || echo "  skipped sweep-instructions.png (no perfnorm data)"
-    gnuplot libfindchars-bench/sweep-cost-model.gnuplot 2>/dev/null && echo "  wrote docs/sweep-cost-model.png" || echo "  skipped sweep-cost-model.png (no perfnorm data)"
-    gnuplot libfindchars-bench/sweep-cost-model-combined.gnuplot 2>/dev/null && echo "  wrote docs/sweep-cost-model-combined.png" || echo "  skipped sweep-cost-model-combined.png (no perfnorm data)"
+    gnuplot java/libfindchars-bench/sweep-overview.gnuplot && echo "  wrote docs/sweep-overview.png"
+    gnuplot java/libfindchars-bench/sweep-instructions.gnuplot 2>/dev/null && echo "  wrote docs/sweep-instructions.png" || echo "  skipped sweep-instructions.png (no perfnorm data)"
+    gnuplot java/libfindchars-bench/sweep-cost-model.gnuplot 2>/dev/null && echo "  wrote docs/sweep-cost-model.png" || echo "  skipped sweep-cost-model.png (no perfnorm data)"
+    gnuplot java/libfindchars-bench/sweep-cost-model-combined.gnuplot 2>/dev/null && echo "  wrote docs/sweep-cost-model-combined.png" || echo "  skipped sweep-cost-model-combined.png (no perfnorm data)"
 else
     echo ""
     echo "gnuplot not found — skipping plot generation"
