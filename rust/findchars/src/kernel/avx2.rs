@@ -197,16 +197,17 @@ unsafe fn clean_avx2(raw: __m256i, literal_values: &[u8], zero: __m256i) -> __m2
 #[inline]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn prefix_xor_256(v: __m256i) -> __m256i {
-    let zero = _mm256_setzero_si256();
-    let cross = _mm256_permute2x128_si256(zero, v, 0x03);
+    // 0x08: low 128 = zeroed (bit 3), high 128 = source low half (source 0)
+    // Produces [zero | v_lo] to feed the low lane's shift from "left of chunk"
+    let cross = _mm256_permute2x128_si256(v, v, 0x08);
     let mut r = _mm256_xor_si256(v, _mm256_alignr_epi8(v, cross, 15));
-    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    let cross = _mm256_permute2x128_si256(r, r, 0x08);
     r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 14));
-    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    let cross = _mm256_permute2x128_si256(r, r, 0x08);
     r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 12));
-    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    let cross = _mm256_permute2x128_si256(r, r, 0x08);
     r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 8));
-    let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+    let cross = _mm256_permute2x128_si256(r, r, 0x08);
     _mm256_xor_si256(r, cross)
 }
 
