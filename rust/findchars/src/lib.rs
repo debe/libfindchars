@@ -43,6 +43,8 @@ use findchars_solver::{ByteLiteral, LiteralCompiler};
 pub struct EngineBuilder {
     entries: Vec<BuilderEntry>,
     backend: Option<SimdBackend>,
+    filter_fn: Option<vpa::FilterFn>,
+    filter_literal_names: Vec<String>,
 }
 
 enum BuilderEntry {
@@ -60,7 +62,12 @@ struct ResolvedEntry {
 
 impl EngineBuilder {
     pub fn new() -> Self {
-        Self { entries: Vec::new(), backend: None }
+        Self {
+            entries: Vec::new(),
+            backend: None,
+            filter_fn: None,
+            filter_literal_names: Vec::new(),
+        }
     }
 
     /// Add a group of ASCII codepoints to detect (shared literal ID).
@@ -94,6 +101,18 @@ impl EngineBuilder {
     /// Override the SIMD backend (default: auto-detect).
     pub fn backend(mut self, backend: SimdBackend) -> Self {
         self.backend = Some(backend);
+        self
+    }
+
+    /// Set a chunk filter that runs between SIMD detection and position decode.
+    ///
+    /// The filter function receives the accumulator (mutable byte slice),
+    /// mutable state for cross-chunk carry, and literal byte bindings.
+    /// `literal_names` specifies which configured target names are bound
+    /// to the filter's `literals` parameter (in order).
+    pub fn chunk_filter(mut self, filter_fn: vpa::FilterFn, literal_names: &[&str]) -> Self {
+        self.filter_fn = Some(filter_fn);
+        self.filter_literal_names = literal_names.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -265,6 +284,10 @@ impl EngineBuilder {
             charspec_byte_lens,
             charspec_final_lits,
             ranges,
+            filter_fn: self.filter_fn.unwrap_or(vpa::no_op_filter),
+            filter_literals: self.filter_literal_names.iter()
+                .filter_map(|name| literal_map.get(name).copied())
+                .collect(),
             vector_byte_size: vbs,
         };
 

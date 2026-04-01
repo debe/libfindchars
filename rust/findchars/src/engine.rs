@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::vpa;
+
 /// Result of building an engine via [`EngineBuilder`](crate::EngineBuilder).
 pub struct BuildResult {
     /// The detection engine, ready for `find()` calls.
@@ -43,6 +45,13 @@ pub(crate) struct EngineData {
 
     /// Range operations: (lower bound, upper bound, literal byte).
     pub ranges: Vec<(u8, u8, u8)>,
+
+    // --- Filter ---
+
+    /// Chunk filter function (no-op by default).
+    pub filter_fn: vpa::FilterFn,
+    /// Filter literal bindings.
+    pub filter_literals: vpa::FilterLiterals,
 
     // --- Platform ---
 
