@@ -7,7 +7,7 @@
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::engine::{EngineData, MatchStorage};
+use crate::engine::{EngineData, InlineFilter, MatchStorage};
 use crate::vpa;
 
 /// Vector byte size for AVX2.
@@ -106,12 +106,18 @@ unsafe fn process_chunk_avx2(
             accumulator = _mm256_or_si256(accumulator, _mm256_and_si256(in_range, lit_v));
         }
 
-        // Apply chunk filter
-        if has_filter {
-            let mut acc_bytes = [0u8; VBS];
-            _mm256_storeu_si256(acc_bytes.as_mut_ptr() as *mut __m256i, accumulator);
-            (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
-            accumulator = _mm256_loadu_si256(acc_bytes.as_ptr() as *const __m256i);
+        // Apply chunk filter — inline SIMD path for known filters
+        match engine.inline_filter {
+            InlineFilter::CsvQuote { quote_lit } => {
+                accumulator = csv_quote_filter_avx2(accumulator, quote_lit, filter_state);
+            }
+            InlineFilter::None if has_filter => {
+                let mut acc_bytes = [0u8; VBS];
+                _mm256_storeu_si256(acc_bytes.as_mut_ptr() as *mut __m256i, accumulator);
+                (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
+                accumulator = _mm256_loadu_si256(acc_bytes.as_ptr() as *const __m256i);
+            }
+            InlineFilter::None => {}
         }
 
         // Fast rejection
@@ -176,5 +182,123 @@ unsafe fn clean_avx2(raw: __m256i, literal_values: &[u8], zero: __m256i) -> __m2
             result = _mm256_or_si256(result, _mm256_and_si256(mask, lit_v));
         }
         result
+    }
+}
+
+// --- Inline CSV quote filter using AVX2 vectorized prefix XOR ---
+
+/// Cross-lane byte shift right by N for AVX2 (256-bit).
+///
+/// AVX2 has no cross-lane byte shuffle. The trick:
+/// 1. `_mm256_permute2x128_si256(zero, v, 0x03)` moves low lane to high, zeros low
+/// 2. `_mm256_alignr_epi8(v, cross, 16-N)` shifts within each lane with cross-lane feed
+///
+/// For N >= 16: just use permute2x128 + alignr differently.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn shift_right_avx2(v: __m256i, zero: __m256i) -> [__m256i; 5] {
+    unsafe {
+        // cross = [zero_lo | v_lo] — feeds the low 128 bits of v into the high lane
+        let cross = _mm256_permute2x128_si256(zero, v, 0x03);
+
+        // Shift by 1: alignr(v, cross, 15) within each 128-bit lane
+        let s1 = _mm256_alignr_epi8(v, cross, 15);
+        // Shift by 2
+        let s2 = _mm256_alignr_epi8(v, cross, 14);
+        // Shift by 4
+        let s4 = _mm256_alignr_epi8(v, cross, 12);
+        // Shift by 8
+        let s8 = _mm256_alignr_epi8(v, cross, 8);
+        // Shift by 16: just the cross vector itself (low lane zeroed, high = original low)
+        let s16 = cross;
+
+        [s1, s2, s4, s8, s16]
+    }
+}
+
+/// AVX2 prefix XOR (Hillis-Steele, 5 steps for 32 bytes).
+///
+/// Uses cross-lane byte shift via permute2x128 + alignr.
+/// Each step: r ^= shift_right(r, 2^k)
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn prefix_xor_256(v: __m256i) -> __m256i {
+    unsafe {
+        let zero = _mm256_setzero_si256();
+
+        // Step 1: shift right by 1
+        let cross = _mm256_permute2x128_si256(zero, v, 0x03);
+        let mut r = _mm256_xor_si256(v, _mm256_alignr_epi8(v, cross, 15));
+
+        // Step 2: shift right by 2
+        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+        r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 14));
+
+        // Step 3: shift right by 4
+        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+        r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 12));
+
+        // Step 4: shift right by 8
+        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+        r = _mm256_xor_si256(r, _mm256_alignr_epi8(r, cross, 8));
+
+        // Step 5: shift right by 16
+        let cross = _mm256_permute2x128_si256(zero, r, 0x03);
+        r = _mm256_xor_si256(r, cross);
+
+        r
+    }
+}
+
+/// Inline CSV quote filter for AVX2.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn csv_quote_filter_avx2(
+    accumulator: __m256i,
+    quote_lit: u8,
+    filter_state: &mut vpa::FilterState,
+) -> __m256i {
+    unsafe {
+        let quote_v = _mm256_set1_epi8(quote_lit as i8);
+        let all_ones = _mm256_set1_epi8(-1);
+        let zero = _mm256_setzero_si256();
+
+        // 1. Quote positions
+        let is_quote = _mm256_cmpeq_epi8(accumulator, quote_v);
+
+        // Fast path: no quotes and no carry
+        let quote_bits = _mm256_movemask_epi8(is_quote) as u32;
+        if quote_bits == 0 && filter_state[0] == 0 {
+            return accumulator;
+        }
+
+        // 2. Build quote markers: 0xFF at quote positions
+        let quote_markers = _mm256_and_si256(is_quote, all_ones);
+
+        // 3. Prefix XOR
+        let mut inside = prefix_xor_256(quote_markers);
+
+        // 4. Apply carry
+        if filter_state[0] != 0 {
+            inside = _mm256_xor_si256(inside, all_ones);
+        }
+
+        // 5. Update carry: extract byte 31 (last byte)
+        // movemask gives bit 31 for byte 31's sign bit; inside is 0xFF or 0x00
+        let inside_bits = _mm256_movemask_epi8(inside) as u32;
+        filter_state[0] = if (inside_bits >> 31) & 1 != 0 { 1 } else { 0 };
+
+        // 6. Kill structural inside quotes
+        // structural = nonzero AND not-quote
+        let is_nonzero = _mm256_cmpeq_epi8(accumulator, zero);
+        let is_nonzero = _mm256_andnot_si256(is_nonzero, all_ones); // invert: 0xFF where nonzero
+        let is_structural = _mm256_andnot_si256(is_quote, is_nonzero); // nonzero AND NOT quote
+        let is_inside = inside; // 0xFF where inside
+
+        let kill = _mm256_and_si256(is_structural, is_inside);
+        _mm256_andnot_si256(kill, accumulator) // acc AND NOT kill
     }
 }

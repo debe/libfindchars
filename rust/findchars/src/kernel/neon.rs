@@ -7,7 +7,7 @@
 use std::arch::aarch64::*;
 
 #[cfg(target_arch = "aarch64")]
-use crate::engine::{EngineData, MatchStorage};
+use crate::engine::{EngineData, InlineFilter, MatchStorage};
 #[cfg(target_arch = "aarch64")]
 use crate::vpa;
 
@@ -119,17 +119,23 @@ unsafe fn process_chunk_neon(
             accumulator = vorrq_u8(accumulator, vandq_u8(in_range, lit_v));
         }
 
-        // Apply chunk filter
-        if has_filter {
-            let mut acc_bytes = [0u8; VBS];
-            vst1q_u8(acc_bytes.as_mut_ptr(), accumulator);
-            (engine.filter_fn)(
-                &mut acc_bytes[..chunk_len],
-                filter_state,
-                &engine.filter_literals,
-                chunk_len,
-            );
-            accumulator = vld1q_u8(acc_bytes.as_ptr());
+        // Apply chunk filter — inline SIMD path for known filters
+        match engine.inline_filter {
+            InlineFilter::CsvQuote { quote_lit } => {
+                accumulator = csv_quote_filter_neon(accumulator, quote_lit, filter_state);
+            }
+            InlineFilter::None if has_filter => {
+                let mut acc_bytes = [0u8; VBS];
+                vst1q_u8(acc_bytes.as_mut_ptr(), accumulator);
+                (engine.filter_fn)(
+                    &mut acc_bytes[..chunk_len],
+                    filter_state,
+                    &engine.filter_literals,
+                    chunk_len,
+                );
+                accumulator = vld1q_u8(acc_bytes.as_ptr());
+            }
+            InlineFilter::None => {}
         }
 
         // Fast rejection: vmaxvq_u8 reduces to max across all lanes
@@ -199,5 +205,73 @@ unsafe fn clean_neon(raw: uint8x16_t, literal_values: &[u8], zero: uint8x16_t) -
             result = vorrq_u8(result, vandq_u8(mask, lit_v));
         }
         result
+    }
+}
+
+// --- Inline CSV quote filter using NEON vectorized prefix XOR ---
+
+/// NEON prefix XOR (Hillis-Steele, 4 steps for 16 bytes).
+///
+/// Uses `vextq_u8(zero, v, 16-N)` for cross-lane byte shift right by N.
+/// This is a native NEON operation — no lane-crossing workarounds needed.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn prefix_xor_128(v: uint8x16_t) -> uint8x16_t {
+    unsafe {
+        let zero = vdupq_n_u8(0);
+        // Step 1: shift right by 1, XOR
+        let mut r = veorq_u8(v, vextq_u8(zero, v, 15));
+        // Step 2: shift right by 2
+        r = veorq_u8(r, vextq_u8(zero, r, 14));
+        // Step 3: shift right by 4
+        r = veorq_u8(r, vextq_u8(zero, r, 12));
+        // Step 4: shift right by 8
+        r = veorq_u8(r, vextq_u8(zero, r, 8));
+        r
+    }
+}
+
+/// Inline CSV quote filter for NEON.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn csv_quote_filter_neon(
+    accumulator: uint8x16_t,
+    quote_lit: u8,
+    filter_state: &mut vpa::FilterState,
+) -> uint8x16_t {
+    unsafe {
+        let quote_v = vdupq_n_u8(quote_lit);
+        let all_ones = vdupq_n_u8(0xFF);
+        let zero = vdupq_n_u8(0);
+
+        // 1. Quote mask
+        let is_quote = vceqq_u8(accumulator, quote_v);
+
+        // Fast path: no quotes and no carry
+        if vmaxvq_u8(is_quote) == 0 && filter_state[0] == 0 {
+            return accumulator;
+        }
+
+        // 2. Quote markers (0xFF at quote positions)
+        let quote_markers = vandq_u8(is_quote, all_ones);
+
+        // 3. Prefix XOR
+        let mut inside = prefix_xor_128(quote_markers);
+
+        // 4. Apply carry
+        if filter_state[0] != 0 {
+            inside = veorq_u8(inside, all_ones);
+        }
+
+        // 5. Update carry: extract last byte (lane 15)
+        filter_state[0] = if vgetq_lane_u8(inside, 15) != 0 { 1 } else { 0 };
+
+        // 6. Kill structural inside quotes
+        let is_nonzero = vmvnq_u8(vceqq_u8(accumulator, zero)); // 0xFF where nonzero
+        let is_structural = vbicq_u8(is_nonzero, is_quote); // nonzero AND NOT quote
+        let kill = vandq_u8(is_structural, inside);
+        vbicq_u8(accumulator, kill) // acc AND NOT kill
     }
 }

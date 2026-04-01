@@ -3,7 +3,7 @@
 //! Processes in logical chunks of 16 bytes to support chunk filters.
 //! Within each chunk: detect → filter → decode.
 
-use crate::engine::{EngineData, MatchStorage};
+use crate::engine::{EngineData, InlineFilter, MatchStorage};
 use crate::utf8;
 use crate::vpa;
 
@@ -78,8 +78,15 @@ pub(crate) fn find_scalar(engine: &EngineData, data: &[u8], storage: &mut MatchS
         }
 
         // Phase 2: Apply chunk filter
-        if has_filter {
-            (engine.filter_fn)(&mut acc[..chunk_len], &mut filter_state, &engine.filter_literals, chunk_len);
+        match engine.inline_filter {
+            InlineFilter::CsvQuote { quote_lit } => {
+                // Fused single-pass toggle — no callback overhead
+                csv_quote_filter_scalar(&mut acc[..chunk_len], quote_lit, &mut filter_state);
+            }
+            InlineFilter::None if has_filter => {
+                (engine.filter_fn)(&mut acc[..chunk_len], &mut filter_state, &engine.filter_literals, chunk_len);
+            }
+            InlineFilter::None => {}
         }
 
         // Phase 3: Decode non-zero positions
@@ -115,4 +122,23 @@ fn apply_round_scalar(engine: &EngineData, byte: u8, round: usize) -> u8 {
     }
 
     result
+}
+
+/// Inline scalar CSV quote filter — fused single-pass toggle.
+#[inline(always)]
+fn csv_quote_filter_scalar(acc: &mut [u8], quote_lit: u8, state: &mut vpa::FilterState) {
+    // Fast path: scan for any quotes
+    if state[0] == 0 && !acc.iter().any(|&b| b == quote_lit) {
+        return;
+    }
+
+    let mut inside = state[0] != 0;
+    for b in acc.iter_mut() {
+        if *b == quote_lit {
+            inside = !inside;
+        } else if *b != 0 && inside {
+            *b = 0;
+        }
+    }
+    state[0] = if inside { 1 } else { 0 };
 }
