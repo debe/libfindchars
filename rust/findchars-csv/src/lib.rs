@@ -73,17 +73,18 @@ impl CsvParser {
             return Ok(CsvResult::empty());
         }
 
-        let view = self.engine.find(data, storage);
+        // find() writes matches into storage, returns a view borrowing it.
+        // Drop the view immediately to release the borrow, then read
+        // the raw slices directly — zero copy.
+        let match_count = {
+            let view = self.engine.find(data, storage);
+            view.len()
+        };
+        // Now storage is no longer borrowed — read slices directly
+        let positions = &storage.positions()[..match_count];
+        let literals = &storage.literals()[..match_count];
 
-        let match_count = view.len();
-        let mut positions = Vec::with_capacity(match_count);
-        let mut literals = Vec::with_capacity(match_count);
-        for i in 0..match_count {
-            positions.push(view.position(i));
-            literals.push(view.literal(i));
-        }
-
-        self.walk_matches_raw(data, &positions, &literals)
+        self.walk_matches_raw(data, positions, literals)
     }
 
     fn walk_matches_raw(
