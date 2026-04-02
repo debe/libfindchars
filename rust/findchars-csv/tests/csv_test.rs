@@ -34,7 +34,6 @@ fn csv_001_basic_parsing() {
 
 #[test]
 fn csv_001_quoted_fields() {
-    let data = br#""hello","world""#;
     let data = b"\"hello\",\"world\"\n";
     let (result, d) = parse(data);
     assert_eq!(result.row_count(), 1);

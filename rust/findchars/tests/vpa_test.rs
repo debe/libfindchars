@@ -1,7 +1,7 @@
 //! VPA chunk filter integration tests.
 //! Covers VPA-001..010 from the spec.
 
-use findchars::vpa::prefix::{prefix_xor_scalar_with_carry, prefix_sum_scalar_with_carry};
+use findchars::vpa::prefix::prefix_xor_scalar_with_carry;
 use findchars::vpa::{FilterFn, FilterLiterals, FilterState};
 use findchars::{EngineBuilder, MatchStorage, SimdBackend};
 

@@ -171,7 +171,7 @@ unsafe fn process_chunk(
         let mut bits = nonzero;
         let mut i = 0;
         while bits != 0 {
-            let lane = bits.trailing_zeros() as u32;
+            let lane = bits.trailing_zeros();
             *pos_ptr.add(i) = base_offset as u32 + lane;
             i += 1;
             bits &= bits - 1;
