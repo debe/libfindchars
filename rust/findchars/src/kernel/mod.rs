@@ -39,9 +39,9 @@ impl SimdBackend {
             }
         }
         #[cfg(target_arch = "aarch64")]
-        {
-            return SimdBackend::Neon;
-        }
+        return SimdBackend::Neon;
+
+        #[allow(unreachable_code)]
         SimdBackend::Scalar
     }
 
