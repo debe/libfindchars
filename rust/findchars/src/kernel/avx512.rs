@@ -75,6 +75,7 @@ pub(crate) unsafe fn find_avx512(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw,avx512vbmi,avx512vbmi2,pclmulqdq")]
 #[inline]
+#[allow(clippy::too_many_arguments)]
 unsafe fn process_chunk(
     engine: &EngineData,
     chunk: __m512i,
@@ -205,7 +206,7 @@ unsafe fn csv_quote_filter_avx512(
     quote_lit: u8,
     filter_state: &mut vpa::FilterState,
 ) -> __m512i {
-    unsafe {
+    {
         let quote_v = _mm512_set1_epi8(quote_lit as i8);
 
         // 1. Quote positions as 64-bit bitmask

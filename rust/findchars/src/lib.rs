@@ -251,8 +251,8 @@ impl EngineBuilder {
                 let byte_len = entry.utf8_bytes.len();
                 let mut rl = Vec::with_capacity(byte_len);
                 let mut final_lit = 0u8;
-                for r in 0..byte_len {
-                    if let Some(name) = &literal_names[e][r]
+                for (r, names) in literal_names[e].iter().enumerate().take(byte_len) {
+                    if let Some(name) = names
                         && let Some(lit) = find_literal_byte(&round_mask_groups, r, name) {
                             rl.push(lit);
                             final_lit = lit; // last round's literal is the output
@@ -287,9 +287,7 @@ impl EngineBuilder {
         let clean_luts_512: Vec<[u8; 64]> = clean_luts.iter().map(|cl| {
             // Build 64-byte vpermb LUT: index by (raw & 0x3F) → literal or 0
             let mut lut64 = [0u8; 64];
-            for i in 0..64usize.min(vbs) {
-                lut64[i] = cl[i]; // cl[i] is 0 for non-literals, literal value for literals
-            }
+            lut64[..64usize.min(vbs)].copy_from_slice(&cl[..64usize.min(vbs)]);
             lut64
         }).collect();
         let ranges_512: Vec<([u8; 64], [u8; 64], [u8; 64])> = ranges.iter().map(|&(lo, hi, lit)| {
@@ -417,10 +415,5 @@ fn replicate_4x(src: &[u8; 16]) -> [u8; 64] {
 
 /// Find the lowest unused literal byte in [1, vbs).
 fn allocate_literal(used: &[u8], vector_byte_size: usize) -> Option<u8> {
-    for candidate in 1..vector_byte_size as u8 {
-        if !used.contains(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    (1..vector_byte_size as u8).find(|candidate| !used.contains(candidate))
 }

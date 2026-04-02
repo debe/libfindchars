@@ -70,6 +70,7 @@ pub fn csv_quote_filter(
     // Fused pass: toggle + zero in one scan
     let mut inside = state[0] != 0;
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..len {
         let b = acc[i];
         if b == quote_lit {

@@ -65,7 +65,7 @@ pub fn generate_csv_data(
             if quoted {
                 data.push(b'"');
                 for _ in 0..field_len {
-                    let ch = (b'a' + rng.random_range(0..26u8)) as u8;
+                    let ch = b'a' + rng.random_range(0..26u8);
                     data.push(ch);
                     // Occasionally embed a comma or quote
                     if rng.random_range(0..20) == 0 {

@@ -26,6 +26,7 @@ pub(crate) fn find_scalar(engine: &EngineData, data: &[u8], storage: &mut MatchS
 
         // Phase 1: Detect into a temporary accumulator buffer
         let mut acc = [0u8; CHUNK_SIZE];
+        #[allow(clippy::needless_range_loop)]
         for i in 0..chunk_len {
             let offset = chunk_start + i;
             let byte = data[offset];
@@ -90,6 +91,7 @@ pub(crate) fn find_scalar(engine: &EngineData, data: &[u8], storage: &mut MatchS
         }
 
         // Phase 3: Decode non-zero positions
+        #[allow(clippy::needless_range_loop)]
         for i in 0..chunk_len {
             if acc[i] != 0 {
                 storage.push((chunk_start + i) as u32, acc[i]);

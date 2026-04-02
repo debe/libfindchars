@@ -68,6 +68,7 @@ pub(crate) unsafe fn find_avx2(
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
+#[allow(clippy::too_many_arguments)]
 unsafe fn process_chunk_avx2(
     engine: &EngineData,
     chunk: __m256i,
