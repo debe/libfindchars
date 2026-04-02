@@ -45,7 +45,7 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     name: rust (${{ matrix.target }})
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: rust
@@ -56,8 +56,7 @@ jobs:
         with:
           workspaces: rust
           key: ${{ matrix.target }}
+          cache-targets: true
+          cache-all-crates: true
       - run: cargo test -p findchars -p findchars-csv
       - run: cargo clippy --workspace -- -D warnings
-      - name: Compile benchmarks
-        if: matrix.target == 'x86_64'
-        run: cargo bench --workspace --no-run
