@@ -36,7 +36,15 @@ jobs:
       - run: LD_LIBRARY_PATH=$PWD/native ./mvnw verify
 
   rust:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+            runner: ubuntu-latest
+          - target: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    name: rust (${{ matrix.target }})
     timeout-minutes: 20
     defaults:
       run:
@@ -47,6 +55,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+          key: ${{ matrix.target }}
       - run: cargo test -p findchars -p findchars-csv
       - run: cargo clippy --workspace -- -D warnings
-      - run: cargo bench --workspace --no-run
+      - name: Compile benchmarks
+        if: matrix.target == 'x86_64'
+        run: cargo bench --workspace --no-run
