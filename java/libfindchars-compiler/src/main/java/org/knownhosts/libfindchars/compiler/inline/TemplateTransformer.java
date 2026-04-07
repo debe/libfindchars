@@ -248,21 +248,37 @@ public final class TemplateTransformer {
                 && !method.flags().has(java.lang.reflect.AccessFlag.STATIC);
     }
 
+    private static final ClassDesc CHUNK_FILTER_DESC =
+            ClassDesc.of("org.knownhosts.libfindchars.api.ChunkFilter");
+
     /**
-     * Rewrite all {@code invokestatic} calls targeting {@code fromOwner} to reference
-     * {@code toOwner} instead. Used to swap the default {@code ChunkFilter} class
-     * reference to a user-provided filter class before {@code BytecodeInliner} inlines it.
+     * Devirtualize filter calls: rewrite {@code invokeinterface ChunkFilter.apply()}
+     * to {@code invokestatic <targetOwner>.applyStatic()}. This converts the runtime
+     * virtual dispatch into a static call that {@link BytecodeInliner} can inline.
+     *
+     * <p>Also removes the preceding {@code aload} of the {@code chunkFilter} field
+     * (the receiver is not needed for a static call) by rewriting the
+     * {@code getfield chunkFilter} to a {@code pop} (removes the {@code this} ref
+     * that was loaded for the field access).
      */
-    public static byte[] rewriteFilterOwner(byte[] classBytes, ClassDesc fromOwner, ClassDesc toOwner) {
+    public static byte[] devirtualizeFilter(byte[] classBytes, ClassDesc targetOwner) {
         var cf = ClassFile.of();
         ClassModel model = cf.parse(classBytes);
 
         return cf.transformClass(model, ClassTransform.transformingMethodBodies(
                 (cb, elem) -> {
                     if (elem instanceof InvokeInstruction ii
-                            && ii.opcode() == Opcode.INVOKESTATIC
-                            && ii.owner().asSymbol().equals(fromOwner)) {
-                        cb.invokestatic(toOwner, ii.name().stringValue(), ii.typeSymbol());
+                            && ii.opcode() == Opcode.INVOKEINTERFACE
+                            && ii.owner().asSymbol().equals(CHUNK_FILTER_DESC)
+                            && ii.name().stringValue().equals("apply")) {
+                        // Replace invokeinterface ChunkFilter.apply with invokestatic targetOwner.applyStatic
+                        cb.invokestatic(targetOwner, "applyStatic", ii.typeSymbol());
+                    } else if (elem instanceof FieldInstruction fi
+                            && fi.opcode() == Opcode.GETFIELD
+                            && fi.name().stringValue().equals("chunkFilter")) {
+                        // The getfield pushed the filter ref; replace with pop to discard `this`
+                        // that was loaded by the preceding aload_0 for the field access
+                        cb.pop();
                     } else {
                         cb.with(elem);
                     }

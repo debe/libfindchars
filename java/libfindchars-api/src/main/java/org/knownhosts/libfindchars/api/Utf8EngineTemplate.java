@@ -61,6 +61,7 @@ public class Utf8EngineTemplate implements FindEngine {
 
     // Chunk filter (VPA extension point)
     @Inline private final int filterEnabled;
+    private final ChunkFilter chunkFilter;
     private final ByteVector[] filterLiterals;
     private final long[] filterState;
     private final byte[] filterScratchpad;
@@ -92,6 +93,7 @@ public class Utf8EngineTemplate implements FindEngine {
             ByteVector[] rangeUpper,
             ByteVector[] rangeLit,
             int filterEnabled,
+            ChunkFilter chunkFilter,
             ByteVector[] filterLiterals,
             int useCompress) {
 
@@ -122,6 +124,7 @@ public class Utf8EngineTemplate implements FindEngine {
 
         // Chunk filter
         this.filterEnabled = filterEnabled;
+        this.chunkFilter = chunkFilter;
         this.filterLiterals = filterLiterals;
         this.filterState = new long[8];
         this.filterScratchpad = new byte[species.vectorByteSize()];
@@ -226,7 +229,7 @@ public class Utf8EngineTemplate implements FindEngine {
 
         // --- Chunk filter (VPA extension point) ---
         if (filterEnabled != 0) {
-            accumulator = NoOpChunkFilter.apply(accumulator, zero, species,
+            accumulator = chunkFilter.apply(accumulator, zero, species,
                     filterState, filterScratchpad, filterLiterals);
         }
 
@@ -252,7 +255,7 @@ public class Utf8EngineTemplate implements FindEngine {
 
         // --- Chunk filter (VPA extension point) ---
         if (filterEnabled != 0) {
-            accumulator = NoOpChunkFilter.apply(accumulator, zero, species,
+            accumulator = chunkFilter.apply(accumulator, zero, species,
                     filterState, filterScratchpad, filterLiterals);
         }
 
@@ -287,7 +290,7 @@ public class Utf8EngineTemplate implements FindEngine {
 
         // --- Chunk filter (VPA extension point) ---
         if (filterEnabled != 0) {
-            accumulator = NoOpChunkFilter.apply(accumulator, zero, species,
+            accumulator = chunkFilter.apply(accumulator, zero, species,
                     filterState, filterScratchpad, filterLiterals);
         }
 

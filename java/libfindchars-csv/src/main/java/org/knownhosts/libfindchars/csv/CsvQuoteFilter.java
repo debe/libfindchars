@@ -26,13 +26,15 @@ import jdk.incubator.vector.VectorSpecies;
  */
 public final class CsvQuoteFilter implements ChunkFilter {
 
+    public static final CsvQuoteFilter INSTANCE = new CsvQuoteFilter();
+
     private CsvQuoteFilter() {}
 
     @Inline
-    public static ByteVector apply(ByteVector accumulator, ByteVector zero,
-                                    VectorSpecies<Byte> species,
-                                    long[] state, byte[] scratchpad,
-                                    ByteVector[] literals) {
+    public static ByteVector applyStatic(ByteVector accumulator, ByteVector zero,
+                                          VectorSpecies<Byte> species,
+                                          long[] state, byte[] scratchpad,
+                                          ByteVector[] literals) {
         var quoteLit = literals[0];
 
         // Quote markers: 0xFF at quote positions, 0x00 elsewhere
@@ -64,5 +66,13 @@ public final class CsvQuoteFilter implements ChunkFilter {
 
         // Zero out killed lanes — single vector blend
         return accumulator.blend(zero, killMask);
+    }
+
+    @Override
+    public ByteVector apply(ByteVector accumulator, ByteVector zero,
+                            VectorSpecies<Byte> species,
+                            long[] state, byte[] scratchpad,
+                            ByteVector[] literals) {
+        return applyStatic(accumulator, zero, species, state, scratchpad, literals);
     }
 }

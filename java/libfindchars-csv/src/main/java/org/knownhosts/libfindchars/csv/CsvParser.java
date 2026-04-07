@@ -10,6 +10,7 @@ import java.nio.file.StandardOpenOption;
 import org.knownhosts.libfindchars.api.FindEngine;
 import org.knownhosts.libfindchars.api.MatchStorage;
 import org.knownhosts.libfindchars.api.MatchView;
+import org.knownhosts.libfindchars.generator.CompilationMode;
 import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 
 /**
@@ -281,6 +282,7 @@ public final class CsvParser {
         private int delimiter = ',';
         private int quote = '"';
         private boolean hasHeader = false;
+        private CompilationMode compilationMode;
 
         private Builder() {}
 
@@ -299,14 +301,29 @@ public final class CsvParser {
             return this;
         }
 
+        /**
+         * Set the compilation mode for the underlying engine.
+         *
+         * @see CompilationMode
+         */
+        public Builder compilationMode(CompilationMode compilationMode) {
+            this.compilationMode = compilationMode;
+            return this;
+        }
+
         public CsvParser build() {
-            var result = Utf8EngineBuilder.builder()
+            var engineBuilder = Utf8EngineBuilder.builder()
                     .codepoints("quote", quote)
                     .codepoints("delim", delimiter)
                     .codepoints("lf", '\n')
-                    .codepoints("cr", '\r')
-                    .chunkFilter(CsvQuoteFilter.class, "quote", "delim", "lf", "cr")
-                    .build();
+                    .codepoints("cr", '\r');
+            if (compilationMode == CompilationMode.AOT) {
+                engineBuilder.chunkFilter(CsvQuoteFilter.INSTANCE, "quote");
+            } else {
+                engineBuilder.chunkFilter(CsvQuoteFilter.class, "quote");
+            }
+            if (compilationMode != null) engineBuilder.compilationMode(compilationMode);
+            var result = engineBuilder.build();
 
             var engine = result.engine();
             var literals = result.literals();

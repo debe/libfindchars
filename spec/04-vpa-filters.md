@@ -12,14 +12,20 @@ Chunk filters transform the detection result vector between SIMD detection and p
 
 **Priority:** MUST
 
-A chunk filter provides a single processing function that accepts the current detection result vector and returns a (potentially modified) result vector. The filter runs once per chunk, after SIMD detection and before position decode.
+A chunk filter provides a processing function that accepts the current detection result vector and returns a (potentially modified) result vector. The filter runs once per chunk, after SIMD detection and before position decode.
+
+Implementations must provide:
+1. An instance `apply(...)` method — the runtime dispatch target used in JIT and AOT compilation modes via interface dispatch.
+2. A static `applyStatic(...)` method with identical parameters, annotated for inlining — the bytecode inlining target used in BYTECODE_INLINE mode. In this mode, the engine rewrites `invokeinterface apply` → `invokestatic applyStatic`, then the bytecode inliner transplants the static body.
+3. A `public static final INSTANCE` singleton field — used by the builder to resolve the filter instance for JIT and AOT modes.
 
 **Acceptance Criteria:**
 1. The filter function receives: the accumulator (detection result vector), a zero vector, the vector species, mutable state, a mutable scratchpad, and immutable literal vectors
 2. The filter returns a (possibly modified) byte vector
 3. The filter is invoked exactly once per chunk during detection
+4. Both `apply` and `applyStatic` produce identical results for identical inputs
 
-**Test derivation:** Implement a pass-through filter, verify detection results are unchanged.
+**Test derivation:** Implement a pass-through filter, verify detection results are unchanged across all compilation modes.
 
 ---
 

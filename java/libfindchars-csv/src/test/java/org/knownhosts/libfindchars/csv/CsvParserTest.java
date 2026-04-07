@@ -1,6 +1,7 @@
 package org.knownhosts.libfindchars.csv;
 
 import org.junit.jupiter.api.Test;
+import org.knownhosts.libfindchars.generator.CompilationMode;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
@@ -306,5 +307,64 @@ class CsvParserTest {
         assertEquals("a", result.row(0).get(0));
         assertEquals("b", result.row(1).get(0));
         assertEquals("c", result.row(2).get(0));
+    }
+
+    // --- CompilationMode tests ---
+
+    @Test
+    void jitModeQuoteFiltering() {
+        assertQuoteFiltering(CompilationMode.JIT);
+    }
+
+    @Test
+    void aotModeQuoteFiltering() {
+        assertQuoteFiltering(CompilationMode.AOT);
+    }
+
+    private void assertQuoteFiltering(CompilationMode mode) {
+        var p = CsvParser.builder().compilationMode(mode).build();
+        var result = p.parse("\"a,b\",c\n".getBytes(StandardCharsets.UTF_8));
+        assertEquals(1, result.rowCount());
+        assertEquals(2, result.row(0).fieldCount());
+        assertEquals("a,b", result.row(0).get(0));
+        assertEquals("c", result.row(0).get(1));
+    }
+
+    @Test
+    void jitModeCrossChunkQuoteCarry() {
+        assertCrossChunkQuoteCarry(CompilationMode.JIT);
+    }
+
+    @Test
+    void aotModeCrossChunkQuoteCarry() {
+        assertCrossChunkQuoteCarry(CompilationMode.AOT);
+    }
+
+    private void assertCrossChunkQuoteCarry(CompilationMode mode) {
+        var p = CsvParser.builder().compilationMode(mode).build();
+        String innerCommas = ",".repeat(200);
+        var result = p.parse(("\"" + innerCommas + "\",b\n").getBytes(StandardCharsets.UTF_8));
+        assertEquals(1, result.rowCount());
+        assertEquals(2, result.row(0).fieldCount());
+        assertEquals(innerCommas, result.row(0).get(0));
+        assertEquals("b", result.row(0).get(1));
+    }
+
+    @Test
+    void jitModeSimpleRows() {
+        assertSimpleRows(CompilationMode.JIT);
+    }
+
+    @Test
+    void aotModeSimpleRows() {
+        assertSimpleRows(CompilationMode.AOT);
+    }
+
+    private void assertSimpleRows(CompilationMode mode) {
+        var p = CsvParser.builder().compilationMode(mode).build();
+        var result = p.parse("a,b,c\n1,2,3\n".getBytes(StandardCharsets.UTF_8));
+        assertEquals(2, result.rowCount());
+        assertEquals("a", result.row(0).get(0));
+        assertEquals("3", result.row(1).get(2));
     }
 }

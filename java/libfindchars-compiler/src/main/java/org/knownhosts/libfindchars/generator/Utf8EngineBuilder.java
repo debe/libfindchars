@@ -75,24 +75,46 @@ public class Utf8EngineBuilder {
 
     public static final class Builder {
         private VectorSpecies<Byte> species;
-        private boolean compiled = true;
+        private CompilationMode mode = CompilationMode.BYTECODE_INLINE;
         private final List<CodepointEntry> entries = new ArrayList<>();
         private final List<RangeOperation> rangeOperations = new ArrayList<>();
         private Class<? extends ChunkFilter> filterClass;
+        private ChunkFilter filterInstance;
         private String[] filterLiteralBindings;
 
         private Builder() {}
 
         /**
-         * When {@code false}, skip bytecode specialization and return a plain
-         * {@link Utf8EngineTemplate} instance (C2 JIT fallback path).
-         * Default is {@code true} (compiled hidden class).
+         * Set the compilation mode for the engine.
+         *
+         * @param mode {@link CompilationMode#BYTECODE_INLINE} for maximum performance (HotSpot only),
+         *             {@link CompilationMode#JIT} for C2 JIT fallback,
+         *             {@link CompilationMode#AOT} for GraalVM Native Image compatibility
+         * @see CompilationMode
          */
-        public Builder compiled(boolean compiled) {
-            this.compiled = compiled;
+        public Builder compilationMode(CompilationMode mode) {
+            this.mode = mode;
             return this;
         }
 
+        /**
+         * @deprecated Use {@link #compilationMode(CompilationMode)} instead.
+         *             {@code compiled(true)} maps to {@link CompilationMode#BYTECODE_INLINE},
+         *             {@code compiled(false)} maps to {@link CompilationMode#JIT}.
+         */
+        @Deprecated(since = "0.5.0", forRemoval = true)
+        public Builder compiled(boolean compiled) {
+            this.mode = compiled ? CompilationMode.BYTECODE_INLINE : CompilationMode.JIT;
+            return this;
+        }
+
+        /**
+         * Set the vector species. Defaults to {@code SPECIES_PREFERRED}.
+         *
+         * <p>For AOT compilation (GraalVM Native Image), consider using an explicit
+         * species like {@code ByteVector.SPECIES_256} or {@code ByteVector.SPECIES_512}
+         * rather than {@code SPECIES_PREFERRED}, which is evaluated at image build time.
+         */
         public Builder species(VectorSpecies<Byte> species) {
             this.species = species;
             return this;
@@ -138,15 +160,41 @@ public class Utf8EngineBuilder {
         }
 
         /**
-         * Attach a chunk filter for PDA processing. The filter class must provide an
-         * {@code @Inline public static ByteVector apply(...)} method matching the
-         * {@link ChunkFilter#apply} signature.
+         * Attach a chunk filter for VPA processing. The filter class must:
+         * <ul>
+         *   <li>Implement {@link ChunkFilter} with an instance {@code apply()} method</li>
+         *   <li>Provide an {@code @Inline public static ByteVector applyStatic(...)} method
+         *       (used in {@link CompilationMode#BYTECODE_INLINE} mode)</li>
+         *   <li>Expose a {@code public static final INSTANCE} singleton field</li>
+         * </ul>
          *
-         * @param filterClass      class with {@code @Inline} static apply method
+         * @param filterClass      class implementing {@link ChunkFilter}
          * @param literalBindings  literal names to bind to filter parameters, in order
          */
         public Builder chunkFilter(Class<? extends ChunkFilter> filterClass, String... literalBindings) {
             this.filterClass = filterClass;
+            this.filterLiteralBindings = literalBindings;
+            return this;
+        }
+
+        /**
+         * Attach a chunk filter instance for VPA processing. This overload accepts
+         * a pre-constructed filter instance, avoiding the reflection used by
+         * {@link #chunkFilter(Class, String...)} to resolve the {@code INSTANCE} field.
+         *
+         * <p>Preferred for {@link CompilationMode#AOT} where reflection requires
+         * additional native-image configuration.
+         *
+         * <p>In {@link CompilationMode#BYTECODE_INLINE} mode, the filter's class is
+         * derived from the instance and used for static method inlining.
+         *
+         * @param instance         filter instance implementing {@link ChunkFilter}
+         * @param literalBindings  literal names to bind to filter parameters, in order
+         */
+        @SuppressWarnings("unchecked")
+        public Builder chunkFilter(ChunkFilter instance, String... literalBindings) {
+            this.filterInstance = instance;
+            this.filterClass = (Class<? extends ChunkFilter>) instance.getClass();
             this.filterLiteralBindings = literalBindings;
             return this;
         }
@@ -180,7 +228,7 @@ public class Utf8EngineBuilder {
                     maxRounds, lutResult.totalGroups(), charSpecResult.csCount(),
                     rangeLower.length, literalMap.size());
 
-            return compileEngine(sp, compiled, literalMap,
+            return compileEngine(sp, mode, literalMap,
                     ByteVector.broadcast(sp, (byte) 0),
                     ByteVector.fromArray(sp, Arrays.copyOf(CLASSIFY_TABLE, sp.vectorByteSize()), 0),
                     ByteVector.broadcast(sp, 0x0f),
@@ -451,7 +499,7 @@ public class Utf8EngineBuilder {
         }
 
         private Utf8BuildResult compileEngine(
-                VectorSpecies<Byte> sp, boolean compiled, Map<String, Byte> literalMap,
+                VectorSpecies<Byte> sp, CompilationMode mode, Map<String, Byte> literalMap,
                 ByteVector zero, ByteVector classifyVec, ByteVector lowMaskVec,
                 ByteVector[] lowLUTs, ByteVector[] highLUTs, ByteVector[][] literalVecs,
                 ByteVector[] cleanLUTs, int[] roundGroupStart, int[] roundGroupCount,
@@ -466,29 +514,32 @@ public class Utf8EngineBuilder {
             ByteVector[] filterLitVecs = resolveFilterLiterals(sp, literalMap, hasFilter, zero);
             int useCompressVal = sp.vectorByteSize() >= 64 ? 1 : 0;
 
-            Object[] ctorArgs = {
-                    sp, zero, classifyVec, lowMaskVec,
-                    lowLUTs, highLUTs, literalVecs, cleanLUTs,
-                    roundGroupStart, roundGroupCount, flatGroupLitCounts,
-                    csByteLengths, csRoundLitVecs, csFinalLitVecs,
-                    rangeLower, rangeUpper, rangeLit,
-                    filterEnabledVal, filterLitVecs, useCompressVal
-            };
-
-            if (!compiled) {
+            if (mode != CompilationMode.BYTECODE_INLINE) {
+                // JIT and AOT: direct instantiation with runtime filter dispatch
+                ChunkFilter filterInstance = resolveFilterInstance(hasFilter);
                 var engine = (FindEngine) new Utf8EngineTemplate(
                         sp, zero, classifyVec, lowMaskVec,
                         lowLUTs, highLUTs, literalVecs, cleanLUTs,
                         roundGroupStart, roundGroupCount, flatGroupLitCounts,
                         csByteLengths, csRoundLitVecs, csFinalLitVecs,
                         rangeLower, rangeUpper, rangeLit,
-                        filterEnabledVal, filterLitVecs, useCompressVal);
+                        filterEnabledVal, filterInstance, filterLitVecs, useCompressVal);
                 return new Utf8BuildResult(engine, literalMap);
             }
 
+            // BYTECODE_INLINE: bytecode specialization + hidden class
             byte[] specialized = specializeTemplate(sp, maxRounds, rangeLower.length,
                     csCount, lowLUTs.length, filterEnabledVal, useCompressVal,
                     hasFilter, filterClass);
+
+            Object[] ctorArgs = {
+                    sp, zero, classifyVec, lowMaskVec,
+                    lowLUTs, highLUTs, literalVecs, cleanLUTs,
+                    roundGroupStart, roundGroupCount, flatGroupLitCounts,
+                    csByteLengths, csRoundLitVecs, csFinalLitVecs,
+                    rangeLower, rangeUpper, rangeLit,
+                    filterEnabledVal, NoOpChunkFilter.INSTANCE, filterLitVecs, useCompressVal
+            };
 
             try {
                 var lookup = MethodHandles.privateLookupIn(
@@ -500,6 +551,19 @@ public class Utf8EngineBuilder {
                 return new Utf8BuildResult(engine, literalMap);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("Failed to instantiate compiled UTF-8 engine", e);
+            }
+        }
+
+        private ChunkFilter resolveFilterInstance(boolean hasFilter) {
+            if (!hasFilter) return NoOpChunkFilter.INSTANCE;
+            if (filterInstance != null) return filterInstance;
+            try {
+                var field = filterClass.getField("INSTANCE");
+                return (ChunkFilter) field.get(null);
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new IllegalStateException(
+                        "Filter class " + filterClass.getName()
+                        + " must have a public static final INSTANCE field", e);
             }
         }
 
@@ -537,10 +601,14 @@ public class Utf8EngineBuilder {
             byte[] specialized = TemplateTransformer.transform(classBytes, config);
             specialized = BytecodeInliner.inline(specialized, Utf8Kernel.class);
 
+            // Devirtualize filter: rewrite invokeinterface ChunkFilter.apply()
+            // → invokestatic NoOpChunkFilter.applyStatic() (or target filter's applyStatic)
+            var filterOwner = hasFilter
+                    ? java.lang.constant.ClassDesc.of(filterClass.getName())
+                    : java.lang.constant.ClassDesc.of(NoOpChunkFilter.class.getName());
+            specialized = TemplateTransformer.devirtualizeFilter(specialized, filterOwner);
+
             if (hasFilter) {
-                var fromOwner = java.lang.constant.ClassDesc.of(NoOpChunkFilter.class.getName());
-                var toOwner = java.lang.constant.ClassDesc.of(filterClass.getName());
-                specialized = TemplateTransformer.rewriteFilterOwner(specialized, fromOwner, toOwner);
                 specialized = BytecodeInliner.inline(specialized, filterClass);
                 specialized = BytecodeInliner.inline(specialized, VpaKernel.class);
             }

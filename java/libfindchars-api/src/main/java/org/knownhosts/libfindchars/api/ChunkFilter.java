@@ -4,27 +4,23 @@ import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorSpecies;
 
 /**
- * Marker interface for chunk filters used in VPA processing.
+ * Functional interface for chunk filters used in VPA processing.
  *
  * <p>Implementations run between SIMD detection and position decode, transforming
  * the accumulator ByteVector per chunk to zero out lanes that should not be
  * emitted as matches.
  *
- * <p><b>Implementation contract:</b> Classes implementing this marker must provide
- * an {@code @Inline public static ByteVector apply(...)} method with the following
- * signature:
+ * <p><b>Implementation contract:</b> Classes implementing this interface must provide:
+ * <ol>
+ *   <li>An instance {@link #apply} method (used in JIT and AOT compilation modes).</li>
+ *   <li>An {@code @Inline public static ByteVector applyStatic(...)} method with the
+ *       same signature (used by the bytecode inliner in BYTECODE_INLINE mode).</li>
+ *   <li>A {@code public static final INSTANCE} singleton field.</li>
+ * </ol>
  *
- * <pre>{@code
- * @Inline
- * public static ByteVector apply(ByteVector accumulator, ByteVector zero,
- *                                 VectorSpecies<Byte> species,
- *                                 long[] state, byte[] scratchpad,
- *                                 ByteVector[] literals)
- * }</pre>
- *
- * <p>The engine inlines this static method at build time via {@code BytecodeInliner},
- * eliminating virtual dispatch. The marker interface provides compile-time type safety
- * in the builder API ({@code chunkFilter(Class<? extends ChunkFilter>, ...)}).
+ * <p>In BYTECODE_INLINE mode, the engine inlines the static method at build time via
+ * {@code BytecodeInliner}, eliminating virtual dispatch. In JIT and AOT modes, the
+ * engine calls {@link #apply} via virtual dispatch, which C2 or Graal can devirtualize.
  *
  * <p>The engine manages all working memory:
  * <ul>
@@ -40,4 +36,9 @@ import jdk.incubator.vector.VectorSpecies;
  * @see NoOpChunkFilter for the default no-op implementation
  */
 public interface ChunkFilter {
+
+    ByteVector apply(ByteVector accumulator, ByteVector zero,
+                     VectorSpecies<Byte> species,
+                     long[] state, byte[] scratchpad,
+                     ByteVector[] literals);
 }

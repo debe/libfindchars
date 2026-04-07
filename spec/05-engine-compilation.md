@@ -14,13 +14,20 @@ Compilation is an optimization, not a correctness requirement. A conforming impl
 
 An engine template may be specialized with compile-time constants — LUT entries, literal counts, detection round counts, filter type — to produce an optimized engine. The template is a readable, general-purpose implementation; the specialized version eliminates branches and indirection.
 
-**Acceptance Criteria:**
-1. The builder accepts a flag to enable/disable compilation
-2. When enabled, the engine is produced from the template with constants folded
-3. When disabled, the template runs as-is (interpreted mode)
-4. Both modes produce identical results for any input
+The builder accepts a **compilation mode** controlling how the template is materialized:
 
-**Test derivation:** Build the same engine with `compiled=true` and `compiled=false`, verify identical output on shared test inputs.
+- **BYTECODE_INLINE**: Full bytecode specialization — constant folding, dead code elimination, and `@Inline` method inlining. The result is loaded as a hidden class. Maximum performance. Requires JDK ClassFile API at runtime (HotSpot).
+- **JIT**: Direct template instantiation with no bytecode manipulation. Relies on the JIT compiler (e.g., C2) for optimization. Works on any standard JVM.
+- **AOT**: Direct template instantiation with no bytecode manipulation and no hidden classes. Compatible with GraalVM Native Image and other AOT compilers. Consider specifying an explicit vector species rather than `SPECIES_PREFERRED`, which is evaluated at build time.
+
+**Acceptance Criteria:**
+1. The builder accepts a compilation mode (BYTECODE_INLINE, JIT, or AOT)
+2. In BYTECODE_INLINE mode, the engine is produced from the template with constants folded, dead code eliminated, and methods inlined
+3. In JIT mode, the template is instantiated directly and runs as-is
+4. In AOT mode, the template is instantiated directly with no runtime bytecode manipulation
+5. All modes produce identical results for any input (see COMP-005)
+
+**Test derivation:** Build the same engine in all three modes, verify identical output on shared test inputs.
 
 ---
 
