@@ -1,0 +1,14 @@
+# Documentation and specification
+docs/**                linguist-documentation
+spec/**                linguist-documentation
+*.md                   linguist-documentation
+
+# Vendored / generated data
+docs/sweep-data/**     linguist-generated
+docs/csv-sweep-data/** linguist-generated
+
+# Scripts and build tooling
+scripts/**             linguist-vendored
+*.gnuplot              linguist-vendored
+mvnw                   linguist-vendored
+mvnw.cmd               linguist-vendored
