@@ -41,7 +41,7 @@
 	<dependency>
 	    <groupId>org.sosy-lab</groupId>
 	    <artifactId>javasmt-solver-z3</artifactId>
-	    <version>4.15.4</version>
+	    <version>4.16.0</version>
 	</dependency>
   </dependencies>
 </project>
