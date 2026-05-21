@@ -248,6 +248,7 @@ name = "findchars"
 version = "0.1.0"
 dependencies = [
  "findchars-solver",
+ "rand",
  "thiserror",
 ]
 

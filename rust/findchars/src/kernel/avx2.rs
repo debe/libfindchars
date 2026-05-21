@@ -3,11 +3,18 @@
 //! Uses SSSE3 `vpshufb` for nibble-based shuffle lookup and AVX2 for
 //! 256-bit operations. The 16-entry LUTs are duplicated across both
 //! 128-bit lanes since `vpshufb` operates per-lane.
+//!
+//! Multi-byte UTF-8 detection runs one shuffle round per codepoint byte.
+//! Round `r` reads the chunk shifted `r` bytes ahead (`load_shifted_avx2`),
+//! so a lead byte at lane `j` is gated lane-aligned against its continuation
+//! bytes — no cross-lane shifts, and codepoints straddling chunk boundaries
+//! work without special handling.
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
 use crate::engine::{EngineData, InlineFilter, MatchStorage};
+use crate::utf8;
 use crate::vpa;
 
 /// Vector byte size for AVX2.
@@ -42,7 +49,7 @@ pub(crate) unsafe fn find_avx2(
 
         while offset + VBS <= len {
             let chunk = _mm256_loadu_si256(data.as_ptr().add(offset) as *const __m256i);
-            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, VBS, has_filter, &mut filter_state, storage, count);
+            count = process_chunk_avx2(engine, data, chunk, low_mask, zero, offset, VBS, has_filter, &mut filter_state, storage, count);
             offset += VBS;
         }
 
@@ -52,7 +59,7 @@ pub(crate) unsafe fn find_avx2(
             buf[..remaining].copy_from_slice(&data[offset..]);
             let chunk = _mm256_loadu_si256(buf.as_ptr() as *const __m256i);
             let prev_count = storage.len();
-            count = process_chunk_avx2(engine, chunk, low_mask, zero, offset, remaining, has_filter, &mut filter_state, storage, count);
+            count = process_chunk_avx2(engine, data, chunk, low_mask, zero, offset, remaining, has_filter, &mut filter_state, storage, count);
             let valid_end = len as u32;
             while storage.len() > prev_count && *storage.positions.last().unwrap() >= valid_end {
                 storage.positions.pop();
@@ -71,6 +78,7 @@ pub(crate) unsafe fn find_avx2(
 #[allow(clippy::too_many_arguments)]
 unsafe fn process_chunk_avx2(
     engine: &EngineData,
+    data: &[u8],
     chunk: __m256i,
     low_mask: __m256i,
     zero: __m256i,
@@ -82,18 +90,47 @@ unsafe fn process_chunk_avx2(
     mut count: usize,
 ) -> usize {
     unsafe {
-        let mut accumulator = zero;
+        // Round 0: ASCII literals + multi-byte lead bytes.
+        let r0 = apply_round_avx2(engine, chunk, 0, low_mask, zero);
 
-        // Apply round 0 groups
-        if !engine.round_group_count.is_empty() {
-            let r0_start = engine.round_group_start[0];
-            let r0_count = engine.round_group_count[0];
-            for g in r0_start..r0_start + r0_count {
-                let raw = shuffle_avx2(chunk, &engine.low_luts[g], &engine.high_luts[g], low_mask);
-                let cleaned = clean_avx2(raw, &engine.group_literals[g], zero);
-                accumulator = _mm256_or_si256(accumulator, cleaned);
+        let mut accumulator = if engine.max_rounds > 1 && _mm256_movemask_epi8(chunk) != 0 {
+            // --- Multi-byte detection ---
+            let classify_lut = _mm256_broadcastsi128_si256(_mm_loadu_si128(
+                utf8::CLASSIFY_TABLE.as_ptr() as *const __m128i,
+            ));
+            let classify = classify_avx2(chunk, classify_lut, low_mask);
+
+            // rounds[r] = round-r detection of the chunk shifted r bytes ahead,
+            // so a lead byte is gated lane-aligned against its continuations.
+            // max_rounds <= 4 (longest UTF-8 sequence), so the array always fits.
+            let mut rounds = [zero; 4];
+            rounds[0] = r0;
+            for (r, slot) in rounds.iter_mut().enumerate().take(engine.max_rounds).skip(1) {
+                let shifted = load_shifted_avx2(data, base_offset + r);
+                *slot = apply_round_avx2(engine, shifted, r, low_mask, zero);
             }
-        }
+
+            // gateAscii: keep round-0 results only at ASCII positions.
+            let ascii = _mm256_cmpeq_epi8(classify, _mm256_set1_epi8(utf8::CLASSIFY_ASCII as i8));
+            let mut acc = _mm256_and_si256(r0, ascii);
+
+            // gate each charspec: classify == byte_len AND every round literal matches.
+            for s in 0..engine.charspec_byte_lens.len() {
+                let n = engine.charspec_byte_lens[s];
+                let rl = &engine.charspec_round_lits[s];
+                let mut gate = _mm256_cmpeq_epi8(classify, _mm256_set1_epi8(n as i8));
+                for r in 0..n {
+                    let want = _mm256_set1_epi8(rl[r] as i8);
+                    gate = _mm256_and_si256(gate, _mm256_cmpeq_epi8(rounds[r], want));
+                }
+                let final_lit = _mm256_set1_epi8(engine.charspec_final_lits[s] as i8);
+                acc = _mm256_or_si256(acc, _mm256_and_si256(final_lit, gate));
+            }
+            acc
+        } else {
+            // ASCII-only fast path: round 0 is the result.
+            r0
+        };
 
         // Range operations
         for &(lower, upper, lit) in &engine.ranges {
@@ -141,6 +178,62 @@ unsafe fn process_chunk_avx2(
         }
 
         count
+    }
+}
+
+/// Apply one detection round's shuffle groups, OR-ing their cleaned results.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn apply_round_avx2(
+    engine: &EngineData,
+    input: __m256i,
+    round: usize,
+    low_mask: __m256i,
+    zero: __m256i,
+) -> __m256i {
+    unsafe {
+        if round >= engine.round_group_count.len() {
+            return zero;
+        }
+        let start = engine.round_group_start[round];
+        let count = engine.round_group_count[round];
+        let mut result = zero;
+        for g in start..start + count {
+            let raw = shuffle_avx2(input, &engine.low_luts[g], &engine.high_luts[g], low_mask);
+            let cleaned = clean_avx2(raw, &engine.group_literals[g], zero);
+            result = _mm256_or_si256(result, cleaned);
+        }
+        result
+    }
+}
+
+/// Classify each byte by UTF-8 role (1=ASCII, 0=continuation, 2/3/4=lead).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn classify_avx2(chunk: __m256i, classify_lut: __m256i, low_mask: __m256i) -> __m256i {
+    // Pure register intrinsics — no unsafe op inside the #[target_feature] fn.
+    let hi_nibble = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), low_mask);
+    _mm256_shuffle_epi8(classify_lut, hi_nibble)
+}
+
+/// Load `VBS` bytes from `data` starting at `pos`, zero-padding past the end.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn load_shifted_avx2(data: &[u8], pos: usize) -> __m256i {
+    unsafe {
+        let len = data.len();
+        if pos + VBS <= len {
+            _mm256_loadu_si256(data.as_ptr().add(pos) as *const __m256i)
+        } else {
+            let mut buf = [0u8; VBS];
+            if pos < len {
+                buf[..len - pos].copy_from_slice(&data[pos..]);
+            }
+            _mm256_loadu_si256(buf.as_ptr() as *const __m256i)
+        }
     }
 }
 

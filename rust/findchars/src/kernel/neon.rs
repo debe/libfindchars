@@ -2,12 +2,19 @@
 //!
 //! Uses `vqtbl1q_u8` for 16-byte table lookup (no lane splitting needed),
 //! `vceqq_u8` for byte comparison, and `vmaxvq_u8` for fast rejection.
+//!
+//! Multi-byte UTF-8 detection runs one shuffle round per codepoint byte.
+//! Round `r` reads the chunk shifted `r` bytes ahead (`load_shifted_neon`),
+//! so a lead byte at lane `j` is gated lane-aligned against its continuation
+//! bytes — codepoints straddling chunk boundaries work without special handling.
 
 #[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
 
 #[cfg(target_arch = "aarch64")]
 use crate::engine::{EngineData, InlineFilter, MatchStorage};
+#[cfg(target_arch = "aarch64")]
+use crate::utf8;
 #[cfg(target_arch = "aarch64")]
 use crate::vpa;
 
@@ -46,7 +53,7 @@ pub(crate) unsafe fn find_neon(
         while offset + VBS <= len {
             let chunk = vld1q_u8(data.as_ptr().add(offset));
             count = process_chunk_neon(
-                engine, chunk, low_mask, zero, offset, VBS,
+                engine, data, chunk, low_mask, zero, offset, VBS,
                 has_filter, &mut filter_state, storage, count,
             );
             offset += VBS;
@@ -60,7 +67,7 @@ pub(crate) unsafe fn find_neon(
             let chunk = vld1q_u8(buf.as_ptr());
             let prev_count = storage.len();
             count = process_chunk_neon(
-                engine, chunk, low_mask, zero, offset, remaining,
+                engine, data, chunk, low_mask, zero, offset, remaining,
                 has_filter, &mut filter_state, storage, count,
             );
             // Remove matches beyond valid data range
@@ -82,6 +89,7 @@ pub(crate) unsafe fn find_neon(
 #[allow(clippy::too_many_arguments)]
 unsafe fn process_chunk_neon(
     engine: &EngineData,
+    data: &[u8],
     chunk: uint8x16_t,
     low_mask: uint8x16_t,
     zero: uint8x16_t,
@@ -93,18 +101,46 @@ unsafe fn process_chunk_neon(
     mut count: usize,
 ) -> usize {
     unsafe {
-        let mut accumulator = zero;
+        // Round 0: ASCII literals + multi-byte lead bytes.
+        let r0 = apply_round_neon(engine, chunk, 0, low_mask, zero);
 
-        // Apply round 0 groups
-        if !engine.round_group_count.is_empty() {
-            let r0_start = engine.round_group_start[0];
-            let r0_count = engine.round_group_count[0];
-            for g in r0_start..r0_start + r0_count {
-                let raw = shuffle_neon(chunk, &engine.low_luts[g], &engine.high_luts[g], low_mask);
-                let cleaned = clean_neon(raw, &engine.group_literals[g], zero);
-                accumulator = vorrq_u8(accumulator, cleaned);
+        let mut accumulator = if engine.max_rounds > 1
+            && vmaxvq_u8(vandq_u8(chunk, vdupq_n_u8(0x80))) != 0
+        {
+            // --- Multi-byte detection ---
+            let classify_lut = vld1q_u8(utf8::CLASSIFY_TABLE.as_ptr());
+            let classify = classify_neon(chunk, classify_lut);
+
+            // rounds[r] = round-r detection of the chunk shifted r bytes ahead,
+            // so a lead byte is gated lane-aligned against its continuations.
+            // max_rounds <= 4 (longest UTF-8 sequence), so the array always fits.
+            let mut rounds = [zero; 4];
+            rounds[0] = r0;
+            for (r, slot) in rounds.iter_mut().enumerate().take(engine.max_rounds).skip(1) {
+                let shifted = load_shifted_neon(data, base_offset + r);
+                *slot = apply_round_neon(engine, shifted, r, low_mask, zero);
             }
-        }
+
+            // gateAscii: keep round-0 results only at ASCII positions.
+            let ascii = vceqq_u8(classify, vdupq_n_u8(utf8::CLASSIFY_ASCII));
+            let mut acc = vandq_u8(r0, ascii);
+
+            // gate each charspec: classify == byte_len AND every round literal matches.
+            for s in 0..engine.charspec_byte_lens.len() {
+                let n = engine.charspec_byte_lens[s];
+                let rl = &engine.charspec_round_lits[s];
+                let mut gate = vceqq_u8(classify, vdupq_n_u8(n as u8));
+                for r in 0..n {
+                    gate = vandq_u8(gate, vceqq_u8(rounds[r], vdupq_n_u8(rl[r])));
+                }
+                let final_lit = vdupq_n_u8(engine.charspec_final_lits[s]);
+                acc = vorrq_u8(acc, vandq_u8(final_lit, gate));
+            }
+            acc
+        } else {
+            // ASCII-only fast path: round 0 is the result.
+            r0
+        };
 
         // Range operations: unsigned compare via max/min
         for &(lower, upper, lit) in &engine.ranges {
@@ -157,6 +193,62 @@ unsafe fn process_chunk_neon(
         }
 
         count
+    }
+}
+
+/// Apply one detection round's shuffle groups, OR-ing their cleaned results.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn apply_round_neon(
+    engine: &EngineData,
+    input: uint8x16_t,
+    round: usize,
+    low_mask: uint8x16_t,
+    zero: uint8x16_t,
+) -> uint8x16_t {
+    unsafe {
+        if round >= engine.round_group_count.len() {
+            return zero;
+        }
+        let start = engine.round_group_start[round];
+        let count = engine.round_group_count[round];
+        let mut result = zero;
+        for g in start..start + count {
+            let raw = shuffle_neon(input, &engine.low_luts[g], &engine.high_luts[g], low_mask);
+            let cleaned = clean_neon(raw, &engine.group_literals[g], zero);
+            result = vorrq_u8(result, cleaned);
+        }
+        result
+    }
+}
+
+/// Classify each byte by UTF-8 role (1=ASCII, 0=continuation, 2/3/4=lead).
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn classify_neon(chunk: uint8x16_t, classify_lut: uint8x16_t) -> uint8x16_t {
+    // High nibble in [0,15] — vqtbl1q_u8 indexes the 16-byte classify table.
+    let hi_nibble = vshrq_n_u8(chunk, 4);
+    vqtbl1q_u8(classify_lut, hi_nibble)
+}
+
+/// Load `VBS` bytes from `data` starting at `pos`, zero-padding past the end.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn load_shifted_neon(data: &[u8], pos: usize) -> uint8x16_t {
+    unsafe {
+        let len = data.len();
+        if pos + VBS <= len {
+            vld1q_u8(data.as_ptr().add(pos))
+        } else {
+            let mut buf = [0u8; VBS];
+            if pos < len {
+                buf[..len - pos].copy_from_slice(&data[pos..]);
+            }
+            vld1q_u8(buf.as_ptr())
+        }
     }
 }
 

@@ -3,11 +3,17 @@
 //! Uses pre-broadcast 512-bit LUTs loaded once per chunk (not per group),
 //! AVX-512 VBMI `vpermb` for both shuffle and clean steps (single instruction each),
 //! and `vpcompressb` for single-instruction position extraction.
+//!
+//! Multi-byte UTF-8 detection runs one shuffle round per codepoint byte.
+//! Round `r` reads the chunk shifted `r` bytes ahead (`load_shifted_avx512`),
+//! so a lead byte at lane `j` is gated lane-aligned against its continuation
+//! bytes — codepoints straddling chunk boundaries work without special handling.
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
 use crate::engine::{EngineData, InlineFilter, MatchStorage};
+use crate::utf8;
 use crate::vpa;
 
 const VBS: usize = 64;
@@ -42,7 +48,7 @@ pub(crate) unsafe fn find_avx512(
         while offset + VBS <= len {
             let chunk = _mm512_loadu_si512(data.as_ptr().add(offset) as *const _);
             count = process_chunk(
-                engine, chunk, low_mask, offset, VBS,
+                engine, data, chunk, low_mask, offset, VBS,
                 has_filter, &mut filter_state, storage, count,
             );
             offset += VBS;
@@ -56,7 +62,7 @@ pub(crate) unsafe fn find_avx512(
             let chunk = _mm512_loadu_si512(buf.as_ptr() as *const _);
             let prev_count = storage.len();
             count = process_chunk(
-                engine, chunk, low_mask, offset, remaining,
+                engine, data, chunk, low_mask, offset, remaining,
                 has_filter, &mut filter_state, storage, count,
             );
             let valid_end = len as u32;
@@ -78,6 +84,7 @@ pub(crate) unsafe fn find_avx512(
 #[allow(clippy::too_many_arguments)]
 unsafe fn process_chunk(
     engine: &EngineData,
+    data: &[u8],
     chunk: __m512i,
     low_mask: __m512i,
     base_offset: usize,
@@ -88,31 +95,48 @@ unsafe fn process_chunk(
     count: usize,
 ) -> usize {
     unsafe {
-        let mut accumulator = _mm512_setzero_si512();
+        // Round 0: ASCII literals + multi-byte lead bytes.
+        let r0 = apply_round_avx512(engine, chunk, 0, low_mask);
 
-        // Apply round 0 groups using pre-broadcast LUTs + vpermb clean
-        if !engine.round_group_count.is_empty() {
-            let r0_start = engine.round_group_start[0];
-            let r0_count = engine.round_group_count[0];
-            for g in r0_start..r0_start + r0_count {
-                // Load pre-broadcast 512-bit LUTs (single load each, no broadcast)
-                let lo_lut = _mm512_loadu_si512(engine.low_luts_512[g].as_ptr() as *const _);
-                let hi_lut = _mm512_loadu_si512(engine.high_luts_512[g].as_ptr() as *const _);
-                let clean_lut = _mm512_loadu_si512(engine.clean_luts_512[g].as_ptr() as *const _);
+        let mut accumulator = if engine.max_rounds > 1 && _mm512_movepi8_mask(chunk) != 0 {
+            // --- Multi-byte detection ---
+            let classify_lut = _mm512_broadcast_i32x4(_mm_loadu_si128(
+                utf8::CLASSIFY_TABLE.as_ptr() as *const __m128i,
+            ));
+            let classify = classify_avx512(chunk, classify_lut, low_mask);
 
-                // Shuffle: nibble split → vpermb → AND
-                let lo_nibble = _mm512_and_si512(chunk, low_mask);
-                let lo_result = _mm512_permutexvar_epi8(lo_nibble, lo_lut);
-                let hi_nibble = _mm512_and_si512(_mm512_srli_epi16(chunk, 4), low_mask);
-                let hi_result = _mm512_permutexvar_epi8(hi_nibble, hi_lut);
-                let raw = _mm512_and_si512(lo_result, hi_result);
-
-                // Clean: single vpermb maps non-literal values to zero
-                let cleaned = _mm512_permutexvar_epi8(raw, clean_lut);
-
-                accumulator = _mm512_or_si512(accumulator, cleaned);
+            // rounds[r] = round-r detection of the chunk shifted r bytes ahead,
+            // so a lead byte is gated lane-aligned against its continuations.
+            // max_rounds <= 4 (longest UTF-8 sequence), so the array always fits.
+            let zero = _mm512_setzero_si512();
+            let mut rounds = [zero; 4];
+            rounds[0] = r0;
+            for (r, slot) in rounds.iter_mut().enumerate().take(engine.max_rounds).skip(1) {
+                let shifted = load_shifted_avx512(data, base_offset + r);
+                *slot = apply_round_avx512(engine, shifted, r, low_mask);
             }
-        }
+
+            // gateAscii: keep round-0 results only at ASCII positions.
+            let ascii_k = _mm512_cmpeq_epi8_mask(classify, _mm512_set1_epi8(utf8::CLASSIFY_ASCII as i8));
+            let mut acc = _mm512_maskz_mov_epi8(ascii_k, r0);
+
+            // gate each charspec: classify == byte_len AND every round literal matches.
+            for s in 0..engine.charspec_byte_lens.len() {
+                let n = engine.charspec_byte_lens[s];
+                let rl = &engine.charspec_round_lits[s];
+                let mut gate = _mm512_cmpeq_epi8_mask(classify, _mm512_set1_epi8(n as i8));
+                for r in 0..n {
+                    let want = _mm512_set1_epi8(rl[r] as i8);
+                    gate &= _mm512_cmpeq_epi8_mask(rounds[r], want);
+                }
+                let final_lit = _mm512_set1_epi8(engine.charspec_final_lits[s] as i8);
+                acc = _mm512_or_si512(acc, _mm512_maskz_mov_epi8(gate, final_lit));
+            }
+            acc
+        } else {
+            // ASCII-only fast path: round 0 is the result.
+            r0
+        };
 
         // Range operations using pre-broadcast vectors
         for (i, &(_, _, _)) in engine.ranges.iter().enumerate() {
@@ -182,6 +206,69 @@ unsafe fn process_chunk(
     }
 }
 
+/// Apply one detection round's shuffle groups, OR-ing their cleaned results.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw,avx512vbmi")]
+#[inline]
+unsafe fn apply_round_avx512(
+    engine: &EngineData,
+    input: __m512i,
+    round: usize,
+    low_mask: __m512i,
+) -> __m512i {
+    unsafe {
+        let mut result = _mm512_setzero_si512();
+        if round >= engine.round_group_count.len() {
+            return result;
+        }
+        let start = engine.round_group_start[round];
+        let count = engine.round_group_count[round];
+        for g in start..start + count {
+            let lo_lut = _mm512_loadu_si512(engine.low_luts_512[g].as_ptr() as *const _);
+            let hi_lut = _mm512_loadu_si512(engine.high_luts_512[g].as_ptr() as *const _);
+            let clean_lut = _mm512_loadu_si512(engine.clean_luts_512[g].as_ptr() as *const _);
+
+            let lo_nibble = _mm512_and_si512(input, low_mask);
+            let lo_result = _mm512_permutexvar_epi8(lo_nibble, lo_lut);
+            let hi_nibble = _mm512_and_si512(_mm512_srli_epi16(input, 4), low_mask);
+            let hi_result = _mm512_permutexvar_epi8(hi_nibble, hi_lut);
+            let raw = _mm512_and_si512(lo_result, hi_result);
+            let cleaned = _mm512_permutexvar_epi8(raw, clean_lut);
+
+            result = _mm512_or_si512(result, cleaned);
+        }
+        result
+    }
+}
+
+/// Classify each byte by UTF-8 role (1=ASCII, 0=continuation, 2/3/4=lead).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw")]
+#[inline]
+unsafe fn classify_avx512(chunk: __m512i, classify_lut: __m512i, low_mask: __m512i) -> __m512i {
+    let hi_nibble = _mm512_and_si512(_mm512_srli_epi16(chunk, 4), low_mask);
+    _mm512_shuffle_epi8(classify_lut, hi_nibble)
+}
+
+/// Load `VBS` bytes from `data` starting at `pos`, zero-padding past the end.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn load_shifted_avx512(data: &[u8], pos: usize) -> __m512i {
+    unsafe {
+        let len = data.len();
+        if pos + VBS <= len {
+            _mm512_loadu_si512(data.as_ptr().add(pos) as *const _)
+        } else {
+            let mut buf = [0u8; VBS];
+            if pos < len {
+                buf[..len - pos].copy_from_slice(&data[pos..]);
+            }
+            _mm512_loadu_si512(buf.as_ptr() as *const _)
+        }
+    }
+}
+
 // --- Inline CSV quote filter using PCLMULQDQ (carryless multiply) ---
 //
 // CLMUL computes prefix XOR on a bitmask in a single instruction:
@@ -240,4 +327,3 @@ unsafe fn csv_quote_filter_avx512(
         _mm512_maskz_mov_epi8(!kill, accumulator)
     }
 }
-

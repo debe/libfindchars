@@ -10,3 +10,6 @@ repository.workspace = true
 [dependencies]
 thiserror.workspace = true
 findchars-solver.workspace = true
+
+[dev-dependencies]
+rand = "0.9"
