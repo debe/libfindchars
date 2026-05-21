@@ -15,8 +15,10 @@ rust-version = "1.94"
 license = "MIT"
 repository = "https://github.com/debe/libfindchars"
 
+# Inter-crate dependencies carry both `path` (for local builds) and `version`
+# (required when publishing to crates.io). `release-rust.sh` bumps both.
 [workspace.dependencies]
-findchars = { path = "findchars" }
-findchars-solver = { path = "findchars-solver" }
-findchars-csv = { path = "findchars-csv" }
+findchars = { path = "findchars", version = "0.1.0" }
+findchars-solver = { path = "findchars-solver", version = "0.1.0" }
+findchars-csv = { path = "findchars-csv", version = "0.1.0" }
 thiserror = "2"
