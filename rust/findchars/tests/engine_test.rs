@@ -8,7 +8,7 @@ use findchars::{EngineBuilder, MatchStorage, SimdBackend};
 #[test]
 fn engine_001_find_returns_match_view() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -26,9 +26,9 @@ fn engine_001_find_returns_match_view() {
 #[test]
 fn engine_002_distinct_literal_bytes() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
-        .codepoints("quote", &[b'"'])
-        .codepoints("newline", &[b'\n'])
+        .codepoints("comma", b",")
+        .codepoints("quote", b"\"")
+        .codepoints("newline", b"\n")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -49,7 +49,7 @@ fn engine_002_distinct_literal_bytes() {
 #[test]
 fn engine_002_literal_map_names() {
     let result = EngineBuilder::new()
-        .codepoints("ws", &[b'\t', b'\n', b' '])
+        .codepoints("ws", b"\t\n ")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -62,7 +62,7 @@ fn engine_002_literal_map_names() {
 #[test]
 fn engine_005_all_targets_detected() {
     let result = EngineBuilder::new()
-        .codepoints("csv", &[b',', b'"', b'\n', b'\r'])
+        .codepoints("csv", b",\"\n\r")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -90,8 +90,8 @@ fn engine_005_all_targets_detected() {
 #[test]
 fn engine_005_multiple_groups_detected() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
-        .codepoints("newline", &[b'\n'])
+        .codepoints("comma", b",")
+        .codepoints("newline", b"\n")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -115,7 +115,7 @@ fn engine_005_multiple_groups_detected() {
 #[test]
 fn engine_006_no_false_positives() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -131,7 +131,7 @@ fn engine_006_no_false_positives() {
 #[test]
 fn engine_006_all_256_bytes_no_false_positives() {
     let result = EngineBuilder::new()
-        .codepoints("target", &[b',', b'.'])
+        .codepoints("target", b",.")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -159,7 +159,7 @@ fn engine_006_all_256_bytes_no_false_positives() {
 #[test]
 fn engine_007_ascending_positions() {
     let result = EngineBuilder::new()
-        .codepoints("chars", &[b',', b'.', b'!', b'?'])
+        .codepoints("chars", b",.!?")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -182,7 +182,7 @@ fn engine_007_ascending_positions() {
 #[test]
 fn engine_008_storage_reuse() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -204,7 +204,7 @@ fn engine_008_storage_reuse() {
 #[test]
 fn engine_009_auto_growing_storage() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -238,7 +238,7 @@ fn engine_012_namespace_limit_scalar() {
 #[test]
 fn engine_014_separate_instances_parallel() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -262,7 +262,7 @@ fn engine_014_separate_instances_parallel() {
 #[test]
 fn engine_015_empty_input() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
@@ -299,7 +299,7 @@ fn range_detection() {
 #[test]
 fn range_plus_shuffle() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .range("digits", b'0', b'9')
         .backend(SimdBackend::Scalar)
         .build()
@@ -324,7 +324,7 @@ fn range_plus_shuffle() {
 
 #[test]
 fn parity_vs_linear_scan() {
-    let targets = &[b',', b'"', b'\n', b'\r', b'\t', b' '];
+    let targets = b",\"\n\r\t ";
 
     let result = EngineBuilder::new()
         .codepoints("targets", targets)

@@ -52,8 +52,8 @@ fn test_quote_filter(acc: &mut [u8], state: &mut FilterState, literals: &FilterL
 fn vpa_001_filter_receives_accumulator() {
     // Build engine with filter
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
-        .codepoints("quote", &[b'"'])
+        .codepoints("comma", b",")
+        .codepoints("quote", b"\"")
         .chunk_filter(test_quote_filter as FilterFn, &["quote"])
         .backend(SimdBackend::Scalar)
         .build()
@@ -74,8 +74,8 @@ fn vpa_001_filter_receives_accumulator() {
 #[test]
 fn vpa_003_quote_filter_suppresses_commas() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
-        .codepoints("quote", &[b'"'])
+        .codepoints("comma", b",")
+        .codepoints("quote", b"\"")
         .chunk_filter(test_quote_filter as FilterFn, &["quote"])
         .backend(SimdBackend::Scalar)
         .build()
@@ -109,8 +109,8 @@ fn vpa_003_quote_filter_suppresses_commas() {
 #[test]
 fn vpa_005_carry_across_chunks() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
-        .codepoints("quote", &[b'"'])
+        .codepoints("comma", b",")
+        .codepoints("quote", b"\"")
         .chunk_filter(test_quote_filter as FilterFn, &["quote"])
         .backend(SimdBackend::Scalar)
         .build()
@@ -149,13 +149,13 @@ fn vpa_005_carry_across_chunks() {
 fn vpa_007_no_filter_passthrough() {
     // Engine without filter should produce same results as with no-op filter
     let no_filter = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .backend(SimdBackend::Scalar)
         .build()
         .unwrap();
 
     let with_noop = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .chunk_filter(findchars::vpa::no_op_filter, &[])
         .backend(SimdBackend::Scalar)
         .build()
@@ -179,8 +179,8 @@ fn vpa_007_no_filter_passthrough() {
 #[test]
 fn vpa_002_state_reset_between_calls() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
-        .codepoints("quote", &[b'"'])
+        .codepoints("comma", b",")
+        .codepoints("quote", b"\"")
         .chunk_filter(test_quote_filter as FilterFn, &["quote"])
         .backend(SimdBackend::Scalar)
         .build()

@@ -103,7 +103,7 @@ fn sweep_range(c: &mut Criterion) {
     let mut group = c.benchmark_group("sweep_range");
     group.throughput(Throughput::Bytes(DATA_SIZE as u64));
 
-    let data = generate_data(DATA_SIZE, &[b'5'], 0.10, SEED);
+    let data = generate_data(DATA_SIZE, b"5", 0.10, SEED);
 
     let result = EngineBuilder::new()
         .range("digits", b'0', b'9')

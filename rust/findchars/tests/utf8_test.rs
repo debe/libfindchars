@@ -9,7 +9,7 @@ use findchars::{EngineBuilder, MatchStorage, SimdBackend};
 fn utf8_001_ascii_fast_path() {
     // Pure ASCII input with a multi-byte engine should still detect ASCII targets
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .codepoint("eacute", 0xE9) // é: [0xC3, 0xA9]
         .backend(SimdBackend::Scalar)
         .build()
@@ -150,7 +150,7 @@ fn utf8_007_shared_lead_bytes() {
 #[test]
 fn mixed_ascii_and_multibyte() {
     let result = EngineBuilder::new()
-        .codepoints("comma", &[b','])
+        .codepoints("comma", b",")
         .codepoint("eacute", 0xE9)
         .backend(SimdBackend::Scalar)
         .build()

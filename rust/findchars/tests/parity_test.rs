@@ -51,7 +51,7 @@ fn assert_parity(
 fn parity_single_target_short() {
     assert_parity(
         "single_comma_short",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         b"hello,world",
     );
 }
@@ -62,7 +62,7 @@ fn parity_single_target_short() {
 fn parity_csv_targets() {
     assert_parity(
         "csv_targets",
-        |b| b.codepoints("csv", &[b',', b'"', b'\n', b'\r']),
+        |b| b.codepoints("csv", b",\"\n\r"),
         b"hello,\"world\"\r\nfoo,bar\n",
     );
 }
@@ -73,7 +73,7 @@ fn parity_csv_targets() {
 fn parity_multi_chunk() {
     assert_parity(
         "multi_chunk",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         b"a]b,c]d,e]f,g]h,i]j,k]l,m]n,o]p,q]r,s]t,u]v,w]x,y]z,end",
     );
 }
@@ -95,7 +95,7 @@ fn parity_range() {
 fn parity_range_plus_shuffle() {
     assert_parity(
         "range_plus_shuffle",
-        |b| b.codepoints("comma", &[b',']).range("digits", b'0', b'9'),
+        |b| b.codepoints("comma", b",").range("digits", b'0', b'9'),
         b"a,1,2,3 hello 4,5,6 world 7,8,9",
     );
 }
@@ -106,7 +106,7 @@ fn parity_range_plus_shuffle() {
 fn parity_empty() {
     assert_parity(
         "empty",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         b"",
     );
 }
@@ -117,7 +117,7 @@ fn parity_empty() {
 fn parity_no_matches() {
     assert_parity(
         "no_matches",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         b"hello world no commas here",
     );
 }
@@ -128,7 +128,7 @@ fn parity_no_matches() {
 fn parity_exact_chunk() {
     assert_parity(
         "exact_chunk",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         b"a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,", // 32 bytes
     );
 }
@@ -139,7 +139,7 @@ fn parity_exact_chunk() {
 fn parity_chunk_plus_one() {
     assert_parity(
         "chunk_plus_one",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         b"a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p", // 33 bytes
     );
 }
@@ -151,7 +151,7 @@ fn parity_all_bytes() {
     let data: Vec<u8> = (0..=255).collect();
     assert_parity(
         "all_256_bytes",
-        |b| b.codepoints("target", &[b',', b'.', b'!', b'?', b'\n']),
+        |b| b.codepoints("target", b",.!?\n"),
         &data,
     );
 }
@@ -166,7 +166,7 @@ fn parity_large_data() {
     }
     assert_parity(
         "1kb_sparse_commas",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         &data,
     );
 }
@@ -179,7 +179,7 @@ fn parity_dense_matches() {
     let data = vec![b','; 100];
     assert_parity(
         "all_commas",
-        |b| b.codepoints("comma", &[b',']),
+        |b| b.codepoints("comma", b","),
         &data,
     );
 }
@@ -191,9 +191,9 @@ fn parity_multiple_groups() {
     assert_parity(
         "multiple_groups",
         |b| {
-            b.codepoints("comma", &[b','])
-                .codepoints("quote", &[b'"'])
-                .codepoints("newline", &[b'\n'])
+            b.codepoints("comma", b",")
+                .codepoints("quote", b"\"")
+                .codepoints("newline", b"\n")
         },
         b"hello,\"world\"\nfoo,\"bar\"\nbaz",
     );
