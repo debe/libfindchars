@@ -109,13 +109,13 @@ cd rust && cargo bench -p findchars-bench --bench csv_sweep
 scripts/run-sweep-rust.sh --quick
 scripts/run-csv-sweep-rust.sh --quick
 
-# Clippy
-cd rust && cargo clippy --workspace -- -D warnings
+# Clippy (matches CI — lints tests, examples, and benches too)
+cd rust && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 **Important**: The `findchars-solver` crate depends on Z3 via the `z3` crate with `static-link-z3`. The first build downloads and compiles Z3 from source (~5 minutes), cached thereafter. No system Z3 installation required.
 
-**SIMD backends**: Auto-detected at engine construction time. AVX-512 (with VBMI2) preferred, AVX2 fallback, scalar reference. NEON stubbed for aarch64.
+**SIMD backends**: Auto-detected at engine construction time. AVX-512 (with VBMI2) preferred, AVX2 fallback, scalar reference. NEON for aarch64.
 
 ## Module Architecture
 
@@ -254,6 +254,10 @@ Test classes: `DataGenerationTest`.
 scripts/release-java.sh 0.4.1-jdk25-preview
 scripts/release-java.sh --dry-run 0.4.1-jdk25-preview
 
+# Release Rust crates to crates.io (publishes in dependency order, tags, GitHub release)
+scripts/release-rust.sh 0.1.0
+scripts/release-rust.sh --dry-run 0.1.0
+
 # Parameter sweep benchmarks (~6 min full, ~1 min quick)
 scripts/run-sweep.sh              # Full: 4D sweep (ascii, density, mb, groups)
 scripts/run-sweep.sh --quick      # Smoke test (1 fork, 1 warmup, 1 measurement)
@@ -276,7 +280,7 @@ gnuplot java/libfindchars-bench/csv-sweep-overview.gnuplot
 
 **Version format**: `{semver}-jdk{N}-preview` (e.g. `0.4.0-jdk25-preview`). Drop `-jdk25-preview` suffix when Vector API graduates from incubator.
 
-**Tag format**: `v{version}` (e.g. `v0.4.0-jdk25-preview`).
+**Tag format**: `v{version}` for Java (e.g. `v0.4.0-jdk25-preview`); `rust-v{version}` for the Rust crates (e.g. `rust-v0.1.0`). The Rust crates version independently on crates.io with plain semver.
 
 **Published artifacts**: `libfindchars-api`, `libfindchars-compiler`. CSV, examples, and bench skip deployment.
 

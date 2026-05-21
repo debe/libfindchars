@@ -2,9 +2,26 @@
 
 All notable changes to libfindchars are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versioning: `{semver}-jdk{N}-preview` until the Vector API graduates from incubator.
+
+Versioning: the **Java** implementation uses `{semver}-jdk{N}-preview` until the
+Vector API graduates from incubator. The **Rust** crates (`findchars`,
+`findchars-solver`, `findchars-csv`) use plain semver and version independently
+on crates.io.
 
 ## [Unreleased]
+
+### Added
+- **Rust implementation** — `findchars`, `findchars-solver`, and `findchars-csv`
+  crates conforming to the shared `spec/`. Auto-detected SIMD backends (AVX-512
+  with VBMI2, AVX2, NEON, scalar), Z3 constraint solver, multi-byte UTF-8
+  pipeline, VPA chunk filters, and a SIMD CSV parser. Targeted for an initial
+  crates.io release as `0.1.0`.
+- Rust usage examples (`findchars-examples`): character detection, multi-byte
+  UTF-8 detection, and CSV parsing.
+- Rust fuzz/parity test: seeded rounds validating every CPU-supported SIMD
+  backend against a linear-scan oracle (ASCII) and constructed multi-byte data.
+- `scripts/release-rust.sh` — publishes the Rust crates to crates.io.
+- `rust/README.md` — crate-level documentation for the Rust implementation.
 
 ## [0.5.0-jdk25-preview] — 2026-03-31
 

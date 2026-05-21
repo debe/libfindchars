@@ -130,35 +130,105 @@ This specification defines the observable contract for **libfindchars**, a high-
 
 ## Coverage Matrix
 
-*To be populated as test suites reference spec IDs.*
+Maps each requirement to the test(s) that exercise it. The Rust column reflects
+the test suites under `rust/`; `solver::tests` and `vpa::prefix` are inline
+`#[cfg(test)]` modules, `sweep`/`csv_sweep` are Criterion benchmarks, and all
+other names are integration tests under `tests/`.
 
 | ID | Java Test | Rust Test |
 |----|-----------|-----------|
 | ENGINE-001 | `Utf8EngineTest`, `CompiledEngineTest` | `engine_test::engine_001` |
-| ENGINE-002 | — | `engine_test::engine_002` |
-| ENGINE-005 | `RegexParityTest`, `FuzzRegexParityTest` | `engine_test::engine_005`, `parity_test` |
-| ENGINE-006 | — | `engine_test::engine_006` |
-| ENGINE-007 | — | `engine_test::engine_007` |
-| ENGINE-008 | — | `engine_test::engine_008` |
-| ENGINE-009 | — | `engine_test::engine_009` |
-| ENGINE-012 | — | `engine_test::engine_012` |
-| ENGINE-015 | — | `engine_test::engine_015` |
-| SOLVE-001 | `LiteralCompilerTest` | `solver::tests` |
-| SOLVE-004 | — | `solver::tests::auto_split` |
-| UTF8-001 | `Utf8EngineTest` | `utf8_test::utf8_001` |
-| UTF8-004 | — | `utf8_test::utf8_004` |
-| UTF8-005 | — | `utf8_test::utf8_005` |
-| UTF8-006 | — | `utf8_test::utf8_006` |
-| UTF8-007 | — | `utf8_test::utf8_007` |
-| VPA-001 | — | `vpa_test::vpa_001` |
-| VPA-003 | `VpaKernelTest` | `vpa_test::vpa_003`, `prefix::tests` |
-| VPA-005 | — | `vpa_test::vpa_005` |
-| CSV-001 | `CsvParserTest` | `csv_test::csv_001` |
-| CSV-003 | — | `csv_test::csv_003` |
-| CSV-005 | — | `csv_test::csv_005` |
-| CSV-007 | — | `csv_test::csv_007` |
-| CSV-009 | — | `csv_test::csv_009` |
-| CSV-010 | — | `csv_test::csv_010` |
-| CSV-013 | — | `csv_test::csv_013` |
-| COMP-005 | `CompiledEngineTest` | `parity_test` (scalar vs AVX2 vs AVX-512) |
-| PERF-001 | `SweepBenchmark` | `sweep::sweep_ascii_count` |
+| ENGINE-002 | — | `engine_test::engine_002_distinct_literal_bytes`, `engine_002_literal_map_names` |
+| ENGINE-003 | — | `parity_test` (exact-chunk / chunk-plus-one / multi-chunk), `fuzz_parity_test` |
+| ENGINE-004 | — | `solver::tests`, `engine_test::engine_005_all_targets_detected` |
+| ENGINE-005 | `RegexParityTest`, `FuzzRegexParityTest` | `engine_test::engine_005_*`, `parity_test`, `fuzz_parity_test::fuzz_parity_ascii` |
+| ENGINE-006 | — | `engine_test::engine_006_*`, `fuzz_parity_test::fuzz_parity_ascii` |
+| ENGINE-007 | — | `engine_test::engine_007_ascending_positions` |
+| ENGINE-008 | — | `engine_test::engine_008_storage_reuse` |
+| ENGINE-009 | — | `engine_test::engine_009_auto_growing_storage` |
+| ENGINE-010 | — | `utf8_test::utf8_005_3byte_detection`, `utf8_006_4byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| ENGINE-011 | — | `solver::tests::auto_split_two_groups`, `auto_split_many_literals`, `fuzz_parity_test::fuzz_parity_ascii` |
+| ENGINE-012 | — | `engine_test::engine_012_namespace_limit_scalar` |
+| ENGINE-013 | — | `parity_test` (scalar 16 B vs AVX2 32 B), `backend_csv_test` |
+| ENGINE-014 | — | `engine_test::engine_014_separate_instances_parallel` |
+| ENGINE-015 | — | `engine_test::engine_015_empty_input`, `csv_test::csv_empty_input` |
+| SOLVE-001 | `LiteralCompilerTest` | `solver::tests::solve_single_literal`, `solve_multiple_literals`, `solve_csv_characters` |
+| SOLVE-002 | — | `solver::tests::solve_8_ascii_targets`, `solve_multiple_literals` |
+| SOLVE-003 | — | `solver::tests::solve_8_ascii_targets` |
+| SOLVE-004 | — | `solver::tests::auto_split_two_groups`, `auto_split_many_literals` |
+| SOLVE-005 | — | `solver::tests::auto_split_many_literals` |
+| SOLVE-006 | — | — *(gap)* |
+| SOLVE-007 | — | `solver::tests::solve_respects_used_literals`, `engine_test::engine_002_distinct_literal_bytes` |
+| SOLVE-008 | — | `engine_test::range_detection`, `range_plus_shuffle`, `parity_test::parity_range` |
+| UTF8-001 | `Utf8EngineTest` | `utf8_test::utf8_001_ascii_fast_path` |
+| UTF8-002 | — | `utf8_test::utf8_004_2byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-003 | — | `utf8_test::utf8_no_false_positives_at_continuations`, `utf8_004_2byte_detection` |
+| UTF8-004 | — | `utf8_test::utf8_004_2byte_detection`, `utf8_004_2byte_multiple`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-005 | — | `utf8_test::utf8_005_3byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-006 | — | `utf8_test::utf8_006_4byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-007 | — | `utf8_test::utf8_007_shared_lead_bytes` |
+| UTF8-008 | — | `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-009 | — | `engine_test::range_detection`, `range_plus_shuffle` |
+| UTF8-010 | — | `utf8_test::utf8_005_3byte_detection`, `utf8_006_4byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-011 | — | `utf8_test` (scalar decode), `fuzz_parity_test::fuzz_parity_multibyte` (native decode) |
+| UTF8-012 | — | — *(gap)* |
+| VPA-001 | — | `vpa_test::vpa_001_filter_receives_accumulator` |
+| VPA-002 | — | `vpa_test::vpa_002_state_reset_between_calls` |
+| VPA-003 | `VpaKernelTest` | `vpa_test::vpa_003_quote_filter_suppresses_commas`, `vpa::prefix::tests` (`test_prefix_xor_*`) |
+| VPA-004 | — | `vpa::prefix::tests::test_prefix_sum_basic`, `test_prefix_sum_with_decrements` |
+| VPA-005 | — | `vpa_test::vpa_005_carry_across_chunks`, `vpa::prefix::tests::test_prefix_xor_with_carry` |
+| VPA-006 | — | `vpa_test::vpa_003_quote_filter_suppresses_commas` |
+| VPA-007 | — | `vpa_test::vpa_007_no_filter_passthrough` |
+| VPA-008 | — | — *(gap)* |
+| VPA-009 | — | `vpa_test::vpa_001_filter_receives_accumulator`, `vpa_002_state_reset_between_calls` |
+| VPA-010 | — | `vpa_test::vpa_001_filter_receives_accumulator` |
+| COMP-001 | — | n/a — Rust specializes via monomorphization, not a runtime template transform |
+| COMP-002 | — | n/a — handled by the Rust compiler |
+| COMP-003 | — | n/a — handled by the Rust compiler |
+| COMP-004 | — | n/a — handled by the Rust compiler |
+| COMP-005 | `CompiledEngineTest` | `parity_test`, `fuzz_parity_test` (scalar reference vs SIMD backend) |
+| COMP-006 | — | `vpa_test`, `backend_csv_test` |
+| CSV-001 | `CsvParserTest` | `csv_test::csv_001_basic_parsing`, `csv_001_quoted_fields` |
+| CSV-002 | — | `csv_test::csv_003_comma_inside_quotes` (quote filter + match walk) |
+| CSV-003 | — | `csv_test::csv_003_comma_inside_quotes`, `csv_003_newline_inside_quotes` |
+| CSV-004 | — | — *(gap)* |
+| CSV-005 | — | `csv_test::csv_005_tab_delimiter` |
+| CSV-006 | — | — *(gap)* |
+| CSV-007 | — | `csv_test::csv_007_headers` |
+| CSV-008 | — | `csv_test::csv_008_raw_field` |
+| CSV-009 | — | `csv_test::csv_009_escaped_quotes`, `backend_csv_test::csv_009_escaped_quotes_{scalar,avx2}` |
+| CSV-010 | — | `csv_test::csv_010_lf_rows`, `csv_010_crlf_rows`, `csv_010_no_trailing_newline` |
+| CSV-011 | — | — *(gap)* |
+| CSV-012 | — | `csv_test::csv_012_large_field`, `backend_csv_test::csv_012_large_field_{scalar,avx2}` |
+| CSV-013 | — | `csv_test::csv_013_empty_fields`, `csv_013_trailing_delimiter` |
+| CSV-014 | — | `csv_test::csv_014_row_iteration` |
+| PERF-001 | `SweepBenchmark` | `sweep::sweep_ascii_count`, `sweep_density` |
+| PERF-002 | — | — *(gap)* |
+| PERF-003 | — | `csv_sweep::csv_sweep_columns`, `csv_sweep_field_len` |
+| PERF-004 | — | — *(gap)* |
+| PERF-005 | — | `sweep`, `csv_sweep` (Criterion harness) |
+| PERF-006 | — | `sweep::sweep_ascii_count`, `sweep_density`, `sweep_range` |
+| PERF-007 | — | `csv_sweep::csv_sweep_columns`, `csv_sweep_quotes`, `csv_sweep_field_len`, `csv_backend_compare` |
+| PERF-008 | — | — *(gap)* |
+
+### Known Rust coverage gaps
+
+The following requirements have no dedicated Rust test. They are *untested in
+Rust*, not unimplemented — several are exercised indirectly by neighbouring tests:
+
+| ID | Priority | Title |
+|----|----------|-------|
+| SOLVE-006 | MAY | Deterministic Output |
+| UTF8-012 | SHOULD | Fast Rejection |
+| VPA-008 | MAY | Filter Composability |
+| CSV-004 | SHOULD | Quote Overhead Bound |
+| **CSV-006** | **MUST** | **Configurable Quote Character** |
+| CSV-011 | SHOULD | Zero-Allocation Scan |
+| PERF-002 | SHOULD | Mixed UTF-8 Throughput |
+| PERF-004 | SHOULD | Sublinear Scaling |
+| **PERF-008** | **MUST** | **No Hot-Path Allocation** |
+
+The two **MUST** gaps (CSV-006, PERF-008) are the priorities for closing Rust
+conformance. COMP-001..004 are marked n/a: they describe the Java bytecode
+specialization pipeline, which Rust achieves through compile-time monomorphization
+rather than a runtime transform.
