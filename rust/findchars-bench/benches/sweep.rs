@@ -3,8 +3,9 @@
 //! Dimensions: ASCII target count, match density, range detection.
 //! Reports throughput in GiB/s via criterion's Throughput::Bytes.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use findchars::{EngineBuilder, MatchStorage};
+use std::hint::black_box;
 
 const DATA_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 const SEED: u64 = 42;

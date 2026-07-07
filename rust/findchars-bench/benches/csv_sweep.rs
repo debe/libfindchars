@@ -2,10 +2,11 @@
 //!
 //! Dimensions: column count, quote percentage, average field length.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use findchars::MatchStorage;
 use findchars_bench::generate_csv_data;
 use findchars_csv::CsvParser;
+use std::hint::black_box;
 
 const DATA_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 const SEED: u64 = 42;
