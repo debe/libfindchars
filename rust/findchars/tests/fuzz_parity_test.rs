@@ -11,7 +11,7 @@
 use findchars::{BuildResult, EngineBuilder, MatchStorage, SimdBackend};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// SIMD backends the host CPU actually supports — scalar plus whatever the
 /// architecture provides. Requesting an unsupported backend would execute

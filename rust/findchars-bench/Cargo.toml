@@ -11,7 +11,7 @@ publish = false
 [dependencies]
 findchars.workspace = true
 findchars-csv.workspace = true
-rand = "0.9"
+rand = "0.10"
 regex = "1"
 
 [dev-dependencies]

@@ -1,7 +1,7 @@
 //! Benchmark utilities: deterministic data generators for findchars benchmarks.
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// Generate benchmark data with a target match density.
 ///
