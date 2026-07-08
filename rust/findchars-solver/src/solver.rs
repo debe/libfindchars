@@ -4,7 +4,7 @@
 //! target character. Uses Z3's bitvector theory for constraint solving.
 
 use z3::ast::{Ast, BV};
-use z3::{Config, Context, SatResult, Solver};
+use z3::{Config, SatResult, Solver, with_z3_config};
 
 use crate::literal::{AsciiFindMask, AsciiLiteralGroup, ByteLiteral};
 
@@ -49,140 +49,140 @@ impl LiteralCompiler {
         vector_byte_size: usize,
         group: &AsciiLiteralGroup,
     ) -> Result<AsciiFindMask, String> {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let solver = Solver::new(&ctx);
-        // Timeout: 5 seconds per solve attempt. If Z3 can't solve in 5s,
-        // the group is likely too large and should be split.
-        let mut params = z3::Params::new(&ctx);
-        params.set_u32("timeout", 5000);
-        solver.set_params(&params);
+        // Timeout: 5 seconds per solve attempt. If Z3 can't solve in 5s, the
+        // group is likely too large and should be split. A fresh config — and
+        // thus a fresh implicit context — isolates each group's solve.
+        let mut cfg = Config::new();
+        cfg.set_timeout_msec(5000);
 
-        let num_literals = group.literals.len();
+        with_z3_config(&cfg, || {
+            let solver = Solver::new();
 
-        // Create Z3 bitvector variables for the two 16-entry LUTs
-        let low_nibbles: Vec<BV> = (0..16)
-            .map(|i| BV::new_const(&ctx, format!("lo_{i}"), 8))
-            .collect();
-        let high_nibbles: Vec<BV> = (0..16)
-            .map(|i| BV::new_const(&ctx, format!("hi_{i}"), 8))
-            .collect();
+            let num_literals = group.literals.len();
 
-        // Create Z3 variables for each literal's assigned byte value
-        let lit_vars: Vec<BV> = (0..num_literals)
-            .map(|i| BV::new_const(&ctx, format!("lit_{i}"), 8))
-            .collect();
+            // Create Z3 bitvector variables for the two 16-entry LUTs
+            let low_nibbles: Vec<BV> = (0..16).map(|i| BV::new_const(format!("lo_{i}"), 8)).collect();
+            let high_nibbles: Vec<BV> =
+                (0..16).map(|i| BV::new_const(format!("hi_{i}"), 8)).collect();
 
-        // Constraint: each literal > 0
-        let zero = BV::from_u64(&ctx, 0, 8);
-        for lv in &lit_vars {
-            solver.assert(&lv.bvugt(&zero));
-        }
+            // Create Z3 variables for each literal's assigned byte value
+            let lit_vars: Vec<BV> = (0..num_literals)
+                .map(|i| BV::new_const(format!("lit_{i}"), 8))
+                .collect();
 
-        // Constraint: each literal < vector_byte_size
-        let max_lit = BV::from_u64(&ctx, vector_byte_size as u64, 8);
-        for lv in &lit_vars {
-            solver.assert(&lv.bvult(&max_lit));
-        }
-
-        // Constraint: literals are distinct
-        for i in 0..num_literals {
-            for j in (i + 1)..num_literals {
-                solver.assert(&lit_vars[i]._eq(&lit_vars[j]).not());
+            // Constraint: each literal > 0
+            let zero = BV::from_u64(0, 8);
+            for lv in &lit_vars {
+                solver.assert(lv.bvugt(&zero));
             }
-        }
 
-        // Constraint: literals not in used set
-        for lv in &lit_vars {
-            for &used in used_literals {
-                let used_bv = BV::from_u64(&ctx, used as u64, 8);
-                solver.assert(&lv._eq(&used_bv).not());
+            // Constraint: each literal < vector_byte_size
+            let max_lit = BV::from_u64(vector_byte_size as u64, 8);
+            for lv in &lit_vars {
+                solver.assert(lv.bvult(&max_lit));
             }
-        }
 
-        // Matching constraints: for each literal and each target byte,
-        // lo[byte & 0xF] AND hi[byte >> 4] == literal_value
-        for (lit_idx, literal) in group.literals.iter().enumerate() {
-            for &target_byte in &literal.chars {
-                let lo_idx = (target_byte & 0x0F) as usize;
-                let hi_idx = ((target_byte >> 4) & 0x0F) as usize;
-                let and_result = low_nibbles[lo_idx].bvand(&high_nibbles[hi_idx]);
-                solver.assert(&and_result._eq(&lit_vars[lit_idx]));
-            }
-        }
-
-        // Exclusion constraints: for all non-target nibble pairs,
-        // lo[i] AND hi[j] must not equal any literal
-        let mut target_nibble_pairs = std::collections::HashSet::new();
-        for literal in &group.literals {
-            for &target_byte in &literal.chars {
-                let lo = (target_byte & 0x0F) as usize;
-                let hi = ((target_byte >> 4) & 0x0F) as usize;
-                target_nibble_pairs.insert((lo, hi));
-            }
-        }
-
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..16 {
-            for j in 0..16 {
-                if target_nibble_pairs.contains(&(i, j)) {
-                    continue;
-                }
-                let and_result = low_nibbles[i].bvand(&high_nibbles[j]);
-                // The AND result must be zero OR must not match any literal
-                // Simplest: require AND result to be zero for non-target pairs
-                // when masked to vector_byte_size
-                let masked = if vector_byte_size < 256 {
-                    let mask = BV::from_u64(&ctx, (vector_byte_size - 1) as u64, 8);
-                    and_result.bvand(&mask)
-                } else {
-                    and_result
-                };
-
-                // For non-target pairs: the masked result must not equal any literal
-                for lv in &lit_vars {
-                    solver.assert(&masked._eq(lv).not());
+            // Constraint: literals are distinct
+            for i in 0..num_literals {
+                for j in (i + 1)..num_literals {
+                    solver.assert(Ast::eq(&lit_vars[i], &lit_vars[j]).not());
                 }
             }
-        }
 
-        // Solve
-        match solver.check() {
-            SatResult::Sat => {
-                let model = solver.get_model().unwrap();
-
-                // Extract LUT values
-                let mut low_mask = [0u8; 16];
-                let mut high_mask = [0u8; 16];
-                for i in 0..16 {
-                    low_mask[i] =
-                        model.eval(&low_nibbles[i], true).unwrap().as_u64().unwrap() as u8;
-                    high_mask[i] =
-                        model.eval(&high_nibbles[i], true).unwrap().as_u64().unwrap() as u8;
+            // Constraint: literals not in used set
+            for lv in &lit_vars {
+                for &used in used_literals {
+                    let used_bv = BV::from_u64(used as u64, 8);
+                    solver.assert(Ast::eq(lv, &used_bv).not());
                 }
+            }
 
-                // Extract literal assignments
-                let mut literal_map = Vec::new();
-                let mut name_literal_map = std::collections::HashMap::new();
-                for (lit_idx, literal) in group.literals.iter().enumerate() {
-                    let lit_val =
-                        model.eval(&lit_vars[lit_idx], true).unwrap().as_u64().unwrap() as u8;
-                    name_literal_map.insert(literal.name.clone(), lit_val);
-                    for &target_byte in &literal.chars {
-                        literal_map.push((target_byte, lit_val));
+            // Matching constraints: for each literal and each target byte,
+            // lo[byte & 0xF] AND hi[byte >> 4] == literal_value
+            for (lit_idx, literal) in group.literals.iter().enumerate() {
+                for &target_byte in &literal.chars {
+                    let lo_idx = (target_byte & 0x0F) as usize;
+                    let hi_idx = ((target_byte >> 4) & 0x0F) as usize;
+                    let and_result = low_nibbles[lo_idx].bvand(&high_nibbles[hi_idx]);
+                    solver.assert(Ast::eq(&and_result, &lit_vars[lit_idx]));
+                }
+            }
+
+            // Exclusion constraints: for all non-target nibble pairs,
+            // lo[i] AND hi[j] must not equal any literal
+            let mut target_nibble_pairs = std::collections::HashSet::new();
+            for literal in &group.literals {
+                for &target_byte in &literal.chars {
+                    let lo = (target_byte & 0x0F) as usize;
+                    let hi = ((target_byte >> 4) & 0x0F) as usize;
+                    target_nibble_pairs.insert((lo, hi));
+                }
+            }
+
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..16 {
+                for j in 0..16 {
+                    if target_nibble_pairs.contains(&(i, j)) {
+                        continue;
+                    }
+                    let and_result = low_nibbles[i].bvand(&high_nibbles[j]);
+                    // The AND result must be zero OR must not match any literal
+                    // Simplest: require AND result to be zero for non-target pairs
+                    // when masked to vector_byte_size
+                    let masked = if vector_byte_size < 256 {
+                        let mask = BV::from_u64((vector_byte_size - 1) as u64, 8);
+                        and_result.bvand(&mask)
+                    } else {
+                        and_result
+                    };
+
+                    // For non-target pairs: the masked result must not equal any literal
+                    for lv in &lit_vars {
+                        solver.assert(Ast::eq(&masked, lv).not());
                     }
                 }
-
-                Ok(AsciiFindMask {
-                    low_nibble_mask: low_mask,
-                    high_nibble_mask: high_mask,
-                    literal_map,
-                    name_literal_map,
-                })
             }
-            SatResult::Unsat => Err("unsatisfiable: no valid LUT pair exists for this group".into()),
-            SatResult::Unknown => Err("solver returned unknown".into()),
-        }
+
+            // Solve
+            match solver.check() {
+                SatResult::Sat => {
+                    let model = solver.get_model().unwrap();
+
+                    // Extract LUT values
+                    let mut low_mask = [0u8; 16];
+                    let mut high_mask = [0u8; 16];
+                    for i in 0..16 {
+                        low_mask[i] =
+                            model.eval(&low_nibbles[i], true).unwrap().as_u64().unwrap() as u8;
+                        high_mask[i] =
+                            model.eval(&high_nibbles[i], true).unwrap().as_u64().unwrap() as u8;
+                    }
+
+                    // Extract literal assignments
+                    let mut literal_map = Vec::new();
+                    let mut name_literal_map = std::collections::HashMap::new();
+                    for (lit_idx, literal) in group.literals.iter().enumerate() {
+                        let lit_val =
+                            model.eval(&lit_vars[lit_idx], true).unwrap().as_u64().unwrap() as u8;
+                        name_literal_map.insert(literal.name.clone(), lit_val);
+                        for &target_byte in &literal.chars {
+                            literal_map.push((target_byte, lit_val));
+                        }
+                    }
+
+                    Ok(AsciiFindMask {
+                        low_nibble_mask: low_mask,
+                        high_nibble_mask: high_mask,
+                        literal_map,
+                        name_literal_map,
+                    })
+                }
+                SatResult::Unsat => {
+                    Err("unsatisfiable: no valid LUT pair exists for this group".into())
+                }
+                SatResult::Unknown => Err("solver returned unknown".into()),
+            }
+        })
     }
 
     /// Solve with auto-split: if a single group fails, partition and recurse.
