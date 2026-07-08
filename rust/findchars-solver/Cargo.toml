@@ -8,4 +8,4 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-z3 = { version = "0.12", features = ["static-link-z3"] }
+z3 = { version = "0.20", features = ["vendored"] }
