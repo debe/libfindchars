@@ -17,6 +17,6 @@ scripts/run-csv-sweep-rust.sh --quick
 cd rust && cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-**Important**: The `findchars-solver` crate depends on Z3 via the `z3` crate with `static-link-z3`. The first build downloads and compiles Z3 from source (~5 minutes), cached thereafter. No system Z3 installation required.
+**Important**: The `findchars-solver` crate depends on Z3 via the `z3` crate with the `vendored` feature. The first build compiles Z3 from bundled source (~5 minutes, needs a C++ toolchain and CMake), cached thereafter. No system Z3 installation required. The solver runs at engine-construction time (`EngineBuilder::build()`), so it is a normal dependency of `findchars`, not a build dependency.
 
 **SIMD backends**: Auto-detected at engine construction time. AVX-512 (with VBMI2) preferred, AVX2 fallback, scalar reference. NEON for aarch64.

@@ -12,8 +12,9 @@ members = [
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/debe/libfindchars"
+homepage = "https://github.com/debe/libfindchars"
 
 # Inter-crate dependencies carry both `path` (for local builds) and `version`
 # (required when publishing to crates.io). `release-rust.sh` bumps both.

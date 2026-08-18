@@ -15,7 +15,7 @@ the project overview, benchmarks, and design notes, see the
 | Crate | Published | Purpose |
 |-------|-----------|---------|
 | [`findchars`](findchars/) | yes | Core detection engine, SIMD backends, VPA filters |
-| [`findchars-solver`](findchars-solver/) | yes | Z3 constraint solver (used as a build dependency) |
+| [`findchars-solver`](findchars-solver/) | yes | Z3 constraint solver (runs at engine-construction time) |
 | [`findchars-csv`](findchars-csv/) | yes | SIMD-accelerated CSV parser |
 | `findchars-bench` | no | Criterion benchmarks |
 | `findchars-examples` | no | Runnable usage examples |
@@ -23,8 +23,17 @@ the project overview, benchmarks, and design notes, see the
 ## Installation
 
 Requires **Rust 1.94+**. `findchars-solver` depends on Z3 via the `z3` crate with
-`static-link-z3`; the first build compiles Z3 from source (~5 min, cached
-thereafter) — no system Z3 installation required.
+the `vendored` feature; the first build compiles Z3 from source (~5 min, needs a
+C++ toolchain and CMake, cached thereafter) — no system Z3 installation required.
+
+### Why Z3 is a required dependency
+
+The solver is a normal dependency of `findchars`, invoked at
+**engine-construction time** (`EngineBuilder::build()`), not in the hot
+detection path. Every consumer therefore compiles Z3 once. A future direction
+is a runtime-only core that consumes precompiled search configurations (e.g.
+generated in a build pipeline), which would make the solver optional — today it
+is required.
 
 ```toml
 # Cargo.toml
@@ -133,4 +142,4 @@ cargo bench -p findchars-bench --bench csv_sweep
 
 ## License
 
-MIT — see the project [root](../README.md).
+Apache-2.0 — see the project [root](../README.md).

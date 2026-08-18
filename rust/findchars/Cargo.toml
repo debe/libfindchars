@@ -6,6 +6,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/findchars"
+readme = "README.md"
+keywords = ["simd", "search", "utf-8", "bytes", "characters"]
+categories = ["text-processing", "hardware-support", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = false
 
 [dependencies]
 thiserror.workspace = true
