@@ -33,7 +33,11 @@ on crates.io.
   logging backend on consumers (`slf4j-api` remains the compile-scope API).
 
 #### Dependencies
-- JUnit 5 → 6.1.0, java-smt 6.0.0, javasmt-solver-z3 4.16.0, fastcsv 4.3.0
+- JUnit 5 → 6.1.3, java-smt 6.0.0, javasmt-solver-z3 4.16.0, fastcsv 4.4.0,
+  logback-classic → 1.6.3 (test scope), flatten-maven-plugin → 1.8.0,
+  central-publishing-maven-plugin → 0.11.0. Surefire stays on 3.5.5 and
+  slf4j-api on 2.0.18 — the only newer releases are a milestone and an alpha.
+- CI: `actions/checkout` v6 → v7.
 
 ### Rust
 
@@ -59,6 +63,12 @@ on crates.io.
   is no downstream impact).
 - Complete crates.io metadata: keywords, categories, `readme`, `documentation`,
   `homepage`, bundled LICENSE files.
+
+#### Dependencies
+- `Cargo.lock` refreshed to the latest semver-compatible releases — notably
+  thiserror 2.0.20, regex 1.13.1, rand 0.10.2, criterion 0.8.2, z3 0.20.2.
+  Manifest version requirements are unchanged; each already tracks the
+  newest published major.
 
 ## [0.5.0-jdk25-preview] — 2026-03-31
 
