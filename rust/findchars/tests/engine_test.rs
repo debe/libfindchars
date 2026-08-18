@@ -37,7 +37,7 @@ fn engine_002_distinct_literal_bytes() {
     assert_eq!(lits.len(), 3);
 
     // All non-zero
-    for (_, &v) in lits.iter() {
+    for &v in lits.values() {
         assert_ne!(v, 0, "literal byte must be non-zero");
     }
 
@@ -172,7 +172,10 @@ fn engine_007_ascending_positions() {
         assert!(
             view.position(i) > view.position(i - 1),
             "positions not ascending: pos[{}]={} >= pos[{}]={}",
-            i - 1, view.position(i - 1), i, view.position(i)
+            i - 1,
+            view.position(i - 1),
+            i,
+            view.position(i)
         );
     }
 }
@@ -230,7 +233,10 @@ fn engine_012_namespace_limit_scalar() {
     }
 
     let result = builder.build();
-    assert!(result.is_err(), "should reject 16 literals on 16-byte backend");
+    assert!(
+        result.is_err(),
+        "should reject 16 literals on 16-byte backend"
+    );
 }
 
 // --- ENGINE-014: Engine Not Thread-Safe (separate instances are fine) ---
@@ -349,7 +355,11 @@ fn parity_vs_linear_scan() {
 
     assert_eq!(view.len(), expected.len(), "match count mismatch");
     for (i, &exp_pos) in expected.iter().enumerate() {
-        assert_eq!(view.position(i) as usize, exp_pos, "position mismatch at index {i}");
+        assert_eq!(
+            view.position(i) as usize,
+            exp_pos,
+            "position mismatch at index {i}"
+        );
         assert_eq!(view.literal(i), target_lit, "literal mismatch at index {i}");
     }
 }

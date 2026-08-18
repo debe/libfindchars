@@ -9,7 +9,7 @@ This specification defines the observable contract for **libfindchars**, a high-
 | Language | Location   | Runtime        | Maturity   |
 |----------|------------|----------------|------------|
 | Java 25  | `java/`    | JDK Vector API | Production |
-| Rust     | `rust/`    | `std::arch`    | In progress |
+| Rust     | `rust/`    | `std::arch`    | Production |
 
 ---
 
@@ -193,7 +193,7 @@ other names are integration tests under `tests/`.
 | CSV-003 | — | `csv_test::csv_003_comma_inside_quotes`, `csv_003_newline_inside_quotes` |
 | CSV-004 | — | — *(gap)* |
 | CSV-005 | — | `csv_test::csv_005_tab_delimiter` |
-| CSV-006 | — | — *(gap)* |
+| CSV-006 | — | `csv_test::csv_006_single_quote_char`, `csv_006_escaped_single_quote`, `backend_csv_test::csv_006_single_quote_{scalar,avx2}` |
 | CSV-007 | — | `csv_test::csv_007_headers` |
 | CSV-008 | — | `csv_test::csv_008_raw_field` |
 | CSV-009 | — | `csv_test::csv_009_escaped_quotes`, `backend_csv_test::csv_009_escaped_quotes_{scalar,avx2}` |
@@ -209,7 +209,7 @@ other names are integration tests under `tests/`.
 | PERF-005 | — | `sweep`, `csv_sweep` (Criterion harness) |
 | PERF-006 | — | `sweep::sweep_ascii_count`, `sweep_density`, `sweep_range` |
 | PERF-007 | — | `csv_sweep::csv_sweep_columns`, `csv_sweep_quotes`, `csv_sweep_field_len`, `csv_backend_compare` |
-| PERF-008 | — | — *(gap)* |
+| PERF-008 | — | `perf_alloc_test::perf_008_no_hot_path_allocation`, `perf_008_autogrow_is_only_allocation` |
 
 ### Known Rust coverage gaps
 
@@ -222,13 +222,12 @@ Rust*, not unimplemented — several are exercised indirectly by neighbouring te
 | UTF8-012 | SHOULD | Fast Rejection |
 | VPA-008 | MAY | Filter Composability |
 | CSV-004 | SHOULD | Quote Overhead Bound |
-| **CSV-006** | **MUST** | **Configurable Quote Character** |
 | CSV-011 | SHOULD | Zero-Allocation Scan |
 | PERF-002 | SHOULD | Mixed UTF-8 Throughput |
 | PERF-004 | SHOULD | Sublinear Scaling |
-| **PERF-008** | **MUST** | **No Hot-Path Allocation** |
 
-The two **MUST** gaps (CSV-006, PERF-008) are the priorities for closing Rust
-conformance. COMP-001..004 are marked n/a: they describe the Java bytecode
-specialization pipeline, which Rust achieves through compile-time monomorphization
-rather than a runtime transform.
+All **MUST** requirements are covered in Rust; the remaining gaps are SHOULD/MAY
+and optional to close (CSV-011 can reuse the counting-allocator harness from
+`perf_alloc_test` against `CsvParser::parse()`). COMP-001..004 are marked n/a:
+they describe the Java bytecode specialization pipeline, which Rust achieves
+through compile-time monomorphization rather than a runtime transform.
