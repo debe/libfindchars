@@ -14,7 +14,7 @@ The `spec/` directory contains the language-agnostic specification (73 requireme
 
 ## Build Commands
 
-Toolchains: **JDK 25** with `--enable-preview` and `--add-modules=jdk.incubator.vector` for Java; **Rust 1.94+** for Rust.
+Toolchains: **JDK 25** with `--add-modules=jdk.incubator.vector` for Java (no preview features); **Rust 1.94+** for Rust.
 
 - Java: see `java/CLAUDE.md`
 - Rust: see `rust/CLAUDE.md`

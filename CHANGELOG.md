@@ -3,14 +3,41 @@
 All notable changes to libfindchars are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Versioning: the **Java** implementation uses `{semver}-jdk{N}-preview` until the
-Vector API graduates from incubator. The **Rust** crates (`findchars`,
+Versioning: the **Java** implementation uses `{semver}-jdk{N}` until the
+Vector API graduates from incubator (the `-preview` suffix was dropped in
+0.6.0 — no preview features are used). The **Rust** crates (`findchars`,
 `findchars-solver`, `findchars-csv`) use plain semver and version independently
 on crates.io.
 
 ## [Unreleased]
 
-### Added
+### Java
+
+#### Added
+- **`CompilationMode`** (`BYTECODE_INLINE` / `JIT` / `AOT`) replacing the
+  boolean `compiled` flag; `Utf8EngineBuilder.compiled(boolean)` is deprecated
+  for removal. `ChunkFilter` became a functional interface with instance
+  `apply()` for JIT/AOT dispatch and `@Inline applyStatic()` for bytecode
+  inlining; `TemplateTransformer` gained a `devirtualizeFilter` pass.
+- `Automatic-Module-Name` manifest entries (`org.knownhosts.libfindchars.api`,
+  `org.knownhosts.libfindchars.compiler`) for JPMS consumers.
+- Runnable examples via `exec-maven-plugin` in `libfindchars-examples`
+  (package `org.knownhosts.libfindchars.examples`).
+
+#### Changed
+- **Dropped `--enable-preview`** from compilation, tests, javadoc, and JMH
+  forks. No preview features are used — the artifact needs only
+  `--add-modules=jdk.incubator.vector` and runs on JDK 25 and 26. The version
+  scheme becomes `{semver}-jdk{N}` (e.g. `0.6.0-jdk25`).
+- `logback-classic` moved to test scope — the library no longer forces a
+  logging backend on consumers (`slf4j-api` remains the compile-scope API).
+
+#### Dependencies
+- JUnit 5 → 6.1.0, java-smt 6.0.0, javasmt-solver-z3 4.16.0, fastcsv 4.3.0
+
+### Rust
+
+#### Added
 - **Rust implementation** — `findchars`, `findchars-solver`, and `findchars-csv`
   crates conforming to the shared `spec/`. Auto-detected SIMD backends (AVX-512
   with VBMI2, AVX2, NEON, scalar), Z3 constraint solver, multi-byte UTF-8
@@ -20,8 +47,18 @@ on crates.io.
   UTF-8 detection, and CSV parsing.
 - Rust fuzz/parity test: seeded rounds validating every CPU-supported SIMD
   backend against a linear-scan oracle (ASCII) and constructed multi-byte data.
+- Spec conformance tests closing the last MUST gaps: CSV-006 (configurable
+  quote character) and PERF-008 (zero hot-path allocation, proven with a
+  counting global allocator). All 73-requirement MUSTs are now covered.
 - `scripts/release-rust.sh` — publishes the Rust crates to crates.io.
-- `rust/README.md` — crate-level documentation for the Rust implementation.
+- `rust/README.md` plus per-crate READMEs for crates.io.
+
+#### Changed
+- Crates relicensed **MIT → Apache-2.0** before first publish, matching the
+  repository license and the Java artifacts (never published as MIT, so there
+  is no downstream impact).
+- Complete crates.io metadata: keywords, categories, `readme`, `documentation`,
+  `homepage`, bundled LICENSE files.
 
 ## [0.5.0-jdk25-preview] — 2026-03-31
 

@@ -16,7 +16,7 @@ The [specification](spec/00-index.md) (73 requirements) defines the observable c
 | **Location** | [`java/`](java/) | [`rust/`](rust/) |
 | **Runtime** | JDK 25 Vector API | `std::arch` intrinsics |
 | **Backends** | AVX-512, AVX2, NEON | AVX-512, AVX2, NEON |
-| **Maturity** | Production | In progress |
+| **Maturity** | Production | Production |
 
 ---
 
@@ -94,30 +94,35 @@ for i in 0..view.len() {
 
 ### Java
 
-Requires **JDK 25**. Bytecode is compiled with `--enable-preview` and depends on `jdk.incubator.vector`.
+Requires **JDK 25 or 26**. The artifact is compiled with `--release 25` and depends on the incubator Vector API (`jdk.incubator.vector`) — no preview features, so no `--enable-preview` is needed.
 
 **Maven:**
 ```xml
 <dependency>
     <groupId>org.knownhosts</groupId>
     <artifactId>libfindchars-compiler</artifactId>
-    <version>0.4.0-jdk25-preview</version>
+    <version>0.6.0-jdk25</version>
 </dependency>
 ```
 
 **Gradle:**
 ```kotlin
-implementation("org.knownhosts:libfindchars-compiler:0.4.0-jdk25-preview")
+implementation("org.knownhosts:libfindchars-compiler:0.6.0-jdk25")
 ```
 
 **Runtime JVM arguments:**
 ```
---enable-preview --add-modules=jdk.incubator.vector
+--add-modules=jdk.incubator.vector
 ```
+
+The `libfindchars-compiler` artifact depends on java-smt with the Z3 solver at
+compile scope: the solver runs whenever an engine is built
+(`Utf8EngineBuilder.build()`), so it is a runtime requirement, not a build-time
+tool.
 
 ### Rust
 
-Requires **Rust 1.94+**. The solver crate depends on Z3 (built from source on first compile, ~5 min, cached thereafter).
+Requires **Rust 1.94+**. `findchars` depends on `findchars-solver`, which runs the Z3 solver at engine-construction time — Z3 is compiled from vendored source on the first build (~5 min, needs a C++ toolchain and CMake, cached thereafter). A future direction is a runtime-only core consuming precompiled search configurations, which would make the solver optional.
 
 ```toml
 # Cargo.toml
@@ -126,10 +131,6 @@ findchars = "0.1"
 
 # For CSV parsing
 findchars-csv = "0.1"
-
-# For build.rs codegen (build-dependency only, not shipped)
-[build-dependencies]
-findchars-solver = "0.1"
 ```
 
 SIMD backend is auto-detected at engine construction time (AVX-512 > AVX2 > NEON > scalar).
@@ -348,7 +349,7 @@ Typical engine: **20+ ASCII groups**, several multi-byte codepoints, multiple ra
 
 ### Java
 
-Requires JDK 25 with `--enable-preview` and `--add-modules=jdk.incubator.vector`.
+Requires JDK 25 with `--add-modules=jdk.incubator.vector`.
 
 ```bash
 cd java && ./mvnw clean install
