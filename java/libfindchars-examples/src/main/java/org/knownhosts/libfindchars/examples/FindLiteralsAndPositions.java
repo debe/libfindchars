@@ -1,4 +1,4 @@
-package zz.customname;
+package org.knownhosts.libfindchars.examples;
 
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
@@ -9,7 +9,7 @@ import java.nio.file.StandardOpenOption;
 import org.knownhosts.libfindchars.api.MatchStorage;
 import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 
-class FindLiteralsAndPositions {
+public class FindLiteralsAndPositions {
 
     public static void main(String[] args) throws Exception {
 

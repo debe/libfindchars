@@ -242,16 +242,15 @@ impl CsvParserBuilder {
             .codepoints("lf", b"\n")
             .codepoints("cr", b"\r")
             // Scalar fallback filter (used by scalar/AVX2 backends)
-            .chunk_filter(
-                quote_filter::csv_quote_filter,
-                &["quote"],
-            );
+            .chunk_filter(quote_filter::csv_quote_filter, &["quote"]);
 
         if let Some(backend) = self.backend {
             builder = builder.backend(backend);
         }
 
-        let result = builder.build().map_err(|e| CsvError::BuildFailed(e.to_string()))?;
+        let result = builder
+            .build()
+            .map_err(|e| CsvError::BuildFailed(e.to_string()))?;
 
         let literals = &result.literals;
         let quote_lit = literals["quote"];
@@ -380,14 +379,13 @@ impl CsvField {
             return String::from_utf8_lossy(raw).into_owned();
         }
         // Strip outer quotes
-        let inner = if raw.len() >= 2
-            && raw[0] == self.quote_byte
-            && raw[raw.len() - 1] == self.quote_byte
-        {
-            &raw[1..raw.len() - 1]
-        } else {
-            raw
-        };
+        let inner =
+            if raw.len() >= 2 && raw[0] == self.quote_byte && raw[raw.len() - 1] == self.quote_byte
+            {
+                &raw[1..raw.len() - 1]
+            } else {
+                raw
+            };
         // Unescape doubled quotes
         let qb = self.quote_byte;
         let mut result = Vec::with_capacity(inner.len());

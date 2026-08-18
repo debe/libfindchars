@@ -61,9 +61,12 @@ impl LiteralCompiler {
             let num_literals = group.literals.len();
 
             // Create Z3 bitvector variables for the two 16-entry LUTs
-            let low_nibbles: Vec<BV> = (0..16).map(|i| BV::new_const(format!("lo_{i}"), 8)).collect();
-            let high_nibbles: Vec<BV> =
-                (0..16).map(|i| BV::new_const(format!("hi_{i}"), 8)).collect();
+            let low_nibbles: Vec<BV> = (0..16)
+                .map(|i| BV::new_const(format!("lo_{i}"), 8))
+                .collect();
+            let high_nibbles: Vec<BV> = (0..16)
+                .map(|i| BV::new_const(format!("hi_{i}"), 8))
+                .collect();
 
             // Create Z3 variables for each literal's assigned byte value
             let lit_vars: Vec<BV> = (0..num_literals)
@@ -154,16 +157,22 @@ impl LiteralCompiler {
                     for i in 0..16 {
                         low_mask[i] =
                             model.eval(&low_nibbles[i], true).unwrap().as_u64().unwrap() as u8;
-                        high_mask[i] =
-                            model.eval(&high_nibbles[i], true).unwrap().as_u64().unwrap() as u8;
+                        high_mask[i] = model
+                            .eval(&high_nibbles[i], true)
+                            .unwrap()
+                            .as_u64()
+                            .unwrap() as u8;
                     }
 
                     // Extract literal assignments
                     let mut literal_map = Vec::new();
                     let mut name_literal_map = std::collections::HashMap::new();
                     for (lit_idx, literal) in group.literals.iter().enumerate() {
-                        let lit_val =
-                            model.eval(&lit_vars[lit_idx], true).unwrap().as_u64().unwrap() as u8;
+                        let lit_val = model
+                            .eval(&lit_vars[lit_idx], true)
+                            .unwrap()
+                            .as_u64()
+                            .unwrap() as u8;
                         name_literal_map.insert(literal.name.clone(), lit_val);
                         for &target_byte in &literal.chars {
                             literal_map.push((target_byte, lit_val));
@@ -284,7 +293,10 @@ mod tests {
 
         // Assigned literal should not be 1, 2, or 3
         let lit = masks[0].literal_map[0].1;
-        assert!(!used.contains(&lit), "literal {lit} conflicts with used set");
+        assert!(
+            !used.contains(&lit),
+            "literal {lit} conflicts with used set"
+        );
     }
 
     #[test]
@@ -301,13 +313,19 @@ mod tests {
     fn auto_split_two_groups() {
         // 2 groups of 8 chars each — first group should solve alone,
         // second uses auto-split since its literals conflict with the first
-        let group1 = ByteLiteral::new("set1", vec![b',', b'"', b'\n', b'\r', b'\t', b' ', b';', b'|']);
+        let group1 = ByteLiteral::new(
+            "set1",
+            vec![b',', b'"', b'\n', b'\r', b'\t', b' ', b';', b'|'],
+        );
         let group2 = ByteLiteral::new("set2", vec![b':', b'=', b'+', b'-', b'*', b'/', b'(', b')']);
 
         let masks = LiteralCompiler::solve_with_auto_split(&[], 32, &[group1, group2]).unwrap();
 
         for mask in &masks {
-            assert!(mask.verify_with_mask(32), "LUT verification failed after auto-split");
+            assert!(
+                mask.verify_with_mask(32),
+                "LUT verification failed after auto-split"
+            );
         }
 
         // All 16 targets should be covered

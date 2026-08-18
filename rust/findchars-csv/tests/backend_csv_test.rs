@@ -26,6 +26,32 @@ fn csv_009_escaped_quotes_avx2() {
 }
 
 #[test]
+fn csv_006_single_quote_scalar() {
+    let parser = CsvParser::builder()
+        .backend(SimdBackend::Scalar)
+        .quote(b'\'')
+        .build()
+        .unwrap();
+    let data = b"'a,b',c\n";
+    let mut storage = MatchStorage::new(64);
+    let result = parser.parse(data, &mut storage).unwrap();
+    assert_eq!(result.row(0).get(0, data), "a,b", "scalar single-quote");
+}
+
+#[test]
+fn csv_006_single_quote_avx2() {
+    let parser = CsvParser::builder()
+        .backend(SimdBackend::Avx2)
+        .quote(b'\'')
+        .build()
+        .unwrap();
+    let data = b"'a,b',c\n";
+    let mut storage = MatchStorage::new(64);
+    let result = parser.parse(data, &mut storage).unwrap();
+    assert_eq!(result.row(0).get(0, data), "a,b", "avx2 single-quote");
+}
+
+#[test]
 fn csv_012_large_field_scalar() {
     let mut data = Vec::new();
     data.push(b'"');

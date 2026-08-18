@@ -6,6 +6,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/findchars-csv"
+readme = "README.md"
+keywords = ["csv", "simd", "parser", "zero-copy", "rfc4180"]
+categories = ["text-processing", "parser-implementations", "parsing"]
+
+[package.metadata.docs.rs]
+all-features = false
 
 [dependencies]
 findchars.workspace = true

@@ -117,7 +117,11 @@ fn generate_config(rng: &mut StdRng) -> RoundConfig {
         }
     }
 
-    RoundConfig { groups, range, data }
+    RoundConfig {
+        groups,
+        range,
+        data,
+    }
 }
 
 /// Build an engine for `config` on `backend`, or `None` if the solver fails.

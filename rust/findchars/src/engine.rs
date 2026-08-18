@@ -14,7 +14,6 @@ pub struct BuildResult {
 #[allow(dead_code)]
 pub(crate) struct EngineData {
     // --- Per-group shuffle data (flat across all rounds) ---
-
     /// Per-group low-nibble LUTs (16 entries each).
     pub low_luts: Vec<[u8; 16]>,
     /// Per-group high-nibble LUTs (16 entries each).
@@ -26,7 +25,6 @@ pub(crate) struct EngineData {
     pub group_literals: Vec<Vec<u8>>,
 
     // --- Pre-broadcast SIMD vectors (built at engine construction) ---
-
     /// Per-group: low LUT replicated to 64 bytes (4x16) for AVX-512 vpermb.
     pub low_luts_512: Vec<[u8; 64]>,
     /// Per-group: high LUT replicated to 64 bytes.
@@ -38,7 +36,6 @@ pub(crate) struct EngineData {
     pub ranges_512: Vec<([u8; 64], [u8; 64], [u8; 64])>,
 
     // --- Round mapping ---
-
     /// Start index in the flat group arrays for each round.
     pub round_group_start: Vec<usize>,
     /// Number of groups in each round.
@@ -47,7 +44,6 @@ pub(crate) struct EngineData {
     pub max_rounds: usize,
 
     // --- Multi-byte charspecs ---
-
     /// Per-charspec: expected literal byte in each round.
     pub charspec_round_lits: Vec<Vec<u8>>,
     /// Per-charspec: byte length (2, 3, or 4).
@@ -56,12 +52,10 @@ pub(crate) struct EngineData {
     pub charspec_final_lits: Vec<u8>,
 
     // --- Range operations ---
-
     /// Range operations: (lower bound, upper bound, literal byte).
     pub ranges: Vec<(u8, u8, u8)>,
 
     // --- Filter ---
-
     /// Chunk filter function (no-op by default).
     pub filter_fn: vpa::FilterFn,
     /// Filter literal bindings.
@@ -70,7 +64,6 @@ pub(crate) struct EngineData {
     pub inline_filter: InlineFilter,
 
     // --- Platform ---
-
     /// Logical vector byte size for this engine.
     pub vector_byte_size: usize,
 }
@@ -120,7 +113,10 @@ impl FindEngine {
     pub fn find<'s>(&self, data: &[u8], storage: &'s mut MatchStorage) -> MatchView<'s> {
         storage.clear();
         let count = (self.find_fn)(&self.data, data, storage);
-        MatchView { storage, len: count }
+        MatchView {
+            storage,
+            len: count,
+        }
     }
 }
 
@@ -216,7 +212,11 @@ impl MatchView<'_> {
     /// Panics if `index >= len()`.
     #[inline]
     pub fn position(&self, index: usize) -> u32 {
-        assert!(index < self.len, "index {index} out of bounds (len {})", self.len);
+        assert!(
+            index < self.len,
+            "index {index} out of bounds (len {})",
+            self.len
+        );
         self.storage.positions[index]
     }
 
@@ -226,7 +226,11 @@ impl MatchView<'_> {
     /// Panics if `index >= len()`.
     #[inline]
     pub fn literal(&self, index: usize) -> u8 {
-        assert!(index < self.len, "index {index} out of bounds (len {})", self.len);
+        assert!(
+            index < self.len,
+            "index {index} out of bounds (len {})",
+            self.len
+        );
         self.storage.literals[index]
     }
 }

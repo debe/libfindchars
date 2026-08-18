@@ -102,7 +102,7 @@ public class Utf8EngineBuilder {
          *             {@code compiled(true)} maps to {@link CompilationMode#BYTECODE_INLINE},
          *             {@code compiled(false)} maps to {@link CompilationMode#JIT}.
          */
-        @Deprecated(since = "0.5.0", forRemoval = true)
+        @Deprecated(since = "0.6.0", forRemoval = true)
         public Builder compiled(boolean compiled) {
             this.mode = compiled ? CompilationMode.BYTECODE_INLINE : CompilationMode.JIT;
             return this;

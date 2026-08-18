@@ -10,7 +10,12 @@ use findchars::{EngineBuilder, MatchStorage, SimdBackend};
 /// that fall inside quoted regions.
 ///
 /// Literal bindings: [0] = quote literal byte.
-fn test_quote_filter(acc: &mut [u8], state: &mut FilterState, literals: &FilterLiterals, len: usize) {
+fn test_quote_filter(
+    acc: &mut [u8],
+    state: &mut FilterState,
+    literals: &FilterLiterals,
+    len: usize,
+) {
     if literals.is_empty() {
         return;
     }
@@ -100,7 +105,11 @@ fn vpa_003_quote_filter_suppresses_commas() {
         }
     }
 
-    assert_eq!(commas, vec![5], "only the comma between fields should be visible");
+    assert_eq!(
+        commas,
+        vec![5],
+        "only the comma between fields should be visible"
+    );
     assert_eq!(quotes.len(), 4, "all 4 quotes should be visible");
 }
 
@@ -140,7 +149,10 @@ fn vpa_005_carry_across_chunks() {
     );
     // Find the comma after the closing quote
     let outside_comma_found = visible_commas.iter().any(|&p| p > 25);
-    assert!(outside_comma_found, "comma after closing quote should be visible: {visible_commas:?}");
+    assert!(
+        outside_comma_found,
+        "comma after closing quote should be visible: {visible_commas:?}"
+    );
 }
 
 // --- VPA-007: No-op default ---
@@ -197,7 +209,10 @@ fn vpa_002_state_reset_between_calls() {
         .map(|i| v1.position(i))
         .collect();
     // Comma should be suppressed (inside unclosed quote)
-    assert!(commas1.is_empty(), "comma should be suppressed in unclosed quote");
+    assert!(
+        commas1.is_empty(),
+        "comma should be suppressed in unclosed quote"
+    );
 
     // Second call: clean data — state should be reset
     let data2 = b"a,b";
@@ -206,5 +221,9 @@ fn vpa_002_state_reset_between_calls() {
         .filter(|&i| v2.literal(i) == comma_lit)
         .map(|i| v2.position(i))
         .collect();
-    assert_eq!(commas2, vec![1], "comma should be visible after state reset");
+    assert_eq!(
+        commas2,
+        vec![1],
+        "comma should be visible after state reset"
+    );
 }

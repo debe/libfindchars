@@ -3,7 +3,7 @@
 //! Dimensions: ASCII target count, match density, range detection.
 //! Reports throughput in GiB/s via criterion's Throughput::Bytes.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use findchars::{EngineBuilder, MatchStorage};
 use std::hint::black_box;
 
@@ -12,9 +12,8 @@ const SEED: u64 = 42;
 
 fn pick_targets(count: usize) -> Vec<u8> {
     let pool: Vec<u8> = vec![
-        b',', b'.', b';', b':', b'!', b'?', b'@', b'#',
-        b'$', b'%', b'^', b'&', b'*', b'(', b')', b'-',
-        b'+', b'=', b'[', b']', b'{', b'}', b'|', b'~',
+        b',', b'.', b';', b':', b'!', b'?', b'@', b'#', b'$', b'%', b'^', b'&', b'*', b'(', b')',
+        b'-', b'+', b'=', b'[', b']', b'{', b'}', b'|', b'~',
     ];
     pool[..count.min(pool.len())].to_vec()
 }
@@ -38,17 +37,13 @@ fn sweep_ascii_count(c: &mut Criterion) {
             .unwrap();
         let engine = result.engine;
 
-        group.bench_with_input(
-            BenchmarkId::new("simd", ascii_count),
-            &data,
-            |b, data| {
-                let mut storage = MatchStorage::new(DATA_SIZE / 3);
-                b.iter(|| {
-                    let v = engine.find(black_box(data), &mut storage);
-                    black_box(v.len())
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("simd", ascii_count), &data, |b, data| {
+            let mut storage = MatchStorage::new(DATA_SIZE / 3);
+            b.iter(|| {
+                let v = engine.find(black_box(data), &mut storage);
+                black_box(v.len())
+            });
+        });
 
         // Regex baseline
         let pattern = targets
@@ -58,13 +53,9 @@ fn sweep_ascii_count(c: &mut Criterion) {
             .join("|");
         let re = regex::bytes::Regex::new(&pattern).unwrap();
 
-        group.bench_with_input(
-            BenchmarkId::new("regex", ascii_count),
-            &data,
-            |b, data| {
-                b.iter(|| black_box(re.find_iter(black_box(data)).count()));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("regex", ascii_count), &data, |b, data| {
+            b.iter(|| black_box(re.find_iter(black_box(data)).count()));
+        });
     }
     group.finish();
 }

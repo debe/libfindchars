@@ -85,7 +85,12 @@ pub(crate) fn find_scalar(engine: &EngineData, data: &[u8], storage: &mut MatchS
                 csv_quote_filter_scalar(&mut acc[..chunk_len], quote_lit, &mut filter_state);
             }
             InlineFilter::None if has_filter => {
-                (engine.filter_fn)(&mut acc[..chunk_len], &mut filter_state, &engine.filter_literals, chunk_len);
+                (engine.filter_fn)(
+                    &mut acc[..chunk_len],
+                    &mut filter_state,
+                    &engine.filter_literals,
+                    chunk_len,
+                );
             }
             InlineFilter::None => {}
         }

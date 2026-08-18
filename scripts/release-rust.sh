@@ -104,6 +104,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 # exits before the release commit, restore them so a failed run leaves no mess.
 COMMITTED=false
 restore_manifests() {
+    rm -f "$RUST_DIR/Cargo.toml.bak"
     if [[ "$COMMITTED" == false ]] \
         && ! git -C "$PROJECT_ROOT" diff --quiet -- rust/Cargo.toml rust/Cargo.lock; then
         echo "==> Restoring rust/Cargo.toml and rust/Cargo.lock (release not committed)" >&2
@@ -114,12 +115,14 @@ trap restore_manifests EXIT
 
 # --- Set version ---
 info "Setting workspace version to ${VERSION}"
+# 'sed -i.bak' (suffix attached) is the form both GNU and BSD/macOS sed accept.
 # The bare `version = "..."` line under [workspace.package]; member crates
 # inherit it via `version.workspace = true`.
-sed -i -E "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" "$RUST_DIR/Cargo.toml"
+sed -i.bak -E "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" "$RUST_DIR/Cargo.toml"
 # The `version` field of each inter-crate dependency under
 # [workspace.dependencies] (the `path = "...", version = "..."` entries).
-sed -i -E "s/(path = \"[^\"]*\", version = )\"[^\"]*\"/\1\"${VERSION}\"/" "$RUST_DIR/Cargo.toml"
+sed -i.bak -E "s/(path = \"[^\"]*\", version = )\"[^\"]*\"/\1\"${VERSION}\"/" "$RUST_DIR/Cargo.toml"
+rm -f "$RUST_DIR/Cargo.toml.bak"
 # Sync Cargo.lock to the bumped member versions. '--workspace' rewrites only
 # the workspace members' own lock entries, leaving registry deps untouched —
 # so the staged Cargo.lock stays consistent with Cargo.toml.
@@ -133,10 +136,12 @@ if [[ "$DRY_RUN" == true ]]; then
         --manifest-path "$RUST_DIR/findchars-solver/Cargo.toml"
     # findchars and findchars-csv depend on workspace crates not yet on crates.io,
     # so a verify build would need them published. '--no-verify' skips that build
-    # while still validating manifest metadata, the file list, and packaging.
-    cargo package --no-verify --allow-dirty \
+    # and '--exclude-lockfile' skips the packaged-lockfile resolution (which would
+    # also demand the deps exist in the index) while still validating manifest
+    # metadata, the file list, and packaging.
+    cargo package --no-verify --exclude-lockfile --allow-dirty \
         --manifest-path "$RUST_DIR/findchars/Cargo.toml"
-    cargo package --no-verify --allow-dirty \
+    cargo package --no-verify --exclude-lockfile --allow-dirty \
         --manifest-path "$RUST_DIR/findchars-csv/Cargo.toml"
     info "Dry run complete — rust/Cargo.toml and rust/Cargo.lock restored on exit."
     exit 0

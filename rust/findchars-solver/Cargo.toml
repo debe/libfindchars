@@ -6,6 +6,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/findchars-solver"
+readme = "README.md"
+keywords = ["simd", "z3", "solver", "shuffle", "sat"]
+categories = ["text-processing", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = false
 
 [dependencies]
 z3 = { version = "0.20", features = ["vendored"] }

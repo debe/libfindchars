@@ -77,6 +77,31 @@ fn csv_005_tab_delimiter() {
     assert_eq!(result.row(0).get(1, data), "b");
 }
 
+// --- CSV-006: Configurable Quote Character ---
+
+#[test]
+fn csv_006_single_quote_char() {
+    let parser = CsvParser::builder().quote(b'\'').build().unwrap();
+    let data = b"'a,b',c\n";
+    let mut storage = MatchStorage::new(64);
+    let result = parser.parse(data, &mut storage).unwrap();
+    assert_eq!(result.row_count(), 1);
+    assert_eq!(result.row(0).field_count(), 2);
+    assert_eq!(result.row(0).get(0, data), "a,b");
+    assert_eq!(result.row(0).get(1, data), "c");
+}
+
+#[test]
+fn csv_006_escaped_single_quote() {
+    let parser = CsvParser::builder().quote(b'\'').build().unwrap();
+    let data = b"'it''s',x\n";
+    let mut storage = MatchStorage::new(64);
+    let result = parser.parse(data, &mut storage).unwrap();
+    assert_eq!(result.row_count(), 1);
+    assert_eq!(result.row(0).get(0, data), "it's");
+    assert_eq!(result.row(0).get(1, data), "x");
+}
+
 // --- CSV-007: Header Detection ---
 
 #[test]

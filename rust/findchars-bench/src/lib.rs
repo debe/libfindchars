@@ -15,9 +15,7 @@ pub fn generate_ascii_data(size: usize, targets: &[u8], density: f64, seed: u64)
     let mut data = Vec::with_capacity(size);
 
     // Build filler set: all printable ASCII except targets
-    let filler: Vec<u8> = (0x20..=0x7Eu8)
-        .filter(|b| !targets.contains(b))
-        .collect();
+    let filler: Vec<u8> = (0x20..=0x7Eu8).filter(|b| !targets.contains(b)).collect();
 
     for _ in 0..size {
         if rng.random::<f64>() < density {
@@ -49,7 +47,9 @@ pub fn generate_csv_data(
 
     // Header row
     for c in 0..columns {
-        if c > 0 { data.push(b','); }
+        if c > 0 {
+            data.push(b',');
+        }
         data.extend_from_slice(format!("col{c}").as_bytes());
     }
     data.push(b'\n');
@@ -57,7 +57,9 @@ pub fn generate_csv_data(
     // Data rows
     while data.len() < target_size {
         for c in 0..columns {
-            if c > 0 { data.push(b','); }
+            if c > 0 {
+                data.push(b',');
+            }
 
             let field_len = (avg_field_len / 2) + rng.random_range(0..avg_field_len);
             let quoted = rng.random_range(0..100) < quote_percent;

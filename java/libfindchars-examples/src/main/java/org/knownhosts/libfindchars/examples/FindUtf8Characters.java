@@ -1,4 +1,4 @@
-package zz.customname;
+package org.knownhosts.libfindchars.examples;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
@@ -9,7 +9,7 @@ import org.knownhosts.libfindchars.generator.Utf8EngineBuilder;
 /**
  * Demonstrates detecting multi-byte UTF-8 characters alongside ASCII.
  */
-class FindUtf8Characters {
+public class FindUtf8Characters {
 
     public static void main(String[] args) {
 

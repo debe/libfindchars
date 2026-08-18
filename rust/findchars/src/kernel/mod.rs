@@ -69,9 +69,9 @@ impl SimdBackend {
                 unsafe { avx2::find_avx2(engine, data, storage) }
             },
             #[cfg(target_arch = "x86_64")]
-            SimdBackend::Avx512 => |engine, data, storage| {
-                unsafe { avx512::find_avx512(engine, data, storage) }
-            },
+            SimdBackend::Avx512 => {
+                |engine, data, storage| unsafe { avx512::find_avx512(engine, data, storage) }
+            }
             #[cfg(target_arch = "aarch64")]
             SimdBackend::Neon => |engine, data, storage| {
                 // SAFETY: NEON is always available on aarch64

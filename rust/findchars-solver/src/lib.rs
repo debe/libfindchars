@@ -4,7 +4,8 @@
 //! 16-entry LUT vectors whose AND yields a unique literal byte for each target
 //! and zero for all non-targets.
 //!
-//! Used as a build-dependency (via `build.rs`) or at runtime.
+//! Invoked by `findchars` at engine-construction time (`EngineBuilder::build()`),
+//! outside the hot detection path.
 
 pub mod literal;
 pub mod solver;

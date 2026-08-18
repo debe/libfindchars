@@ -23,6 +23,11 @@ pub type FilterLiterals = Vec<u8>;
 pub type FilterFn = fn(&mut [u8], &mut FilterState, &FilterLiterals, usize);
 
 /// No-op filter: passes detection results through unchanged.
-pub fn no_op_filter(_acc: &mut [u8], _state: &mut FilterState, _literals: &FilterLiterals, _len: usize) {
+pub fn no_op_filter(
+    _acc: &mut [u8],
+    _state: &mut FilterState,
+    _literals: &FilterLiterals,
+    _len: usize,
+) {
     // intentionally empty
 }
