@@ -25,15 +25,16 @@ Prerequisites:
   - gh CLI authenticated (for GitHub release)
 
 Arguments:
-  version       Release version (e.g. 0.3.1-jdk25-preview)
+  version       Release version (e.g. 0.6.0-jdk25)
 
 Options:
-  --dry-run     Build and sign only (mvn verify); skip upload, tag, release
+  --dry-run     Build and sign only (mvn verify); skip upload, tag, release.
+                Leaves the tree untouched (POM bumps restored on exit).
   -h, --help    Show this help
 
 Example:
-  $(basename "$0") 0.3.1-jdk25-preview
-  $(basename "$0") --dry-run 0.3.1-jdk25-preview
+  $(basename "$0") 0.6.0-jdk25
+  $(basename "$0") --dry-run 0.6.0-jdk25
 EOF
 }
 
@@ -92,10 +93,22 @@ info "Setting version to ${VERSION}"
 cd "$JAVA_DIR"
 ./mvnw versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true -q
 
-# --- Commit the version bump ---
-cd "$PROJECT_ROOT"
-git add java/pom.xml java/libfindchars-api/pom.xml java/libfindchars-compiler/pom.xml java/libfindchars-csv/pom.xml java/libfindchars-examples/pom.xml java/libfindchars-bench/pom.xml
-git diff --cached --quiet || git commit -m "release: ${VERSION}"
+POMS=(java/pom.xml java/libfindchars-api/pom.xml java/libfindchars-compiler/pom.xml java/libfindchars-csv/pom.xml java/libfindchars-examples/pom.xml java/libfindchars-bench/pom.xml)
+
+if [[ "$DRY_RUN" == true ]]; then
+    # Dry run never commits: build against the bumped-but-uncommitted POMs and
+    # restore them when the script exits, success or failure.
+    restore_poms() {
+        echo "==> Restoring POM versions (dry run)" >&2
+        git -C "$PROJECT_ROOT" checkout -- "${POMS[@]}"
+    }
+    trap restore_poms EXIT
+else
+    # --- Commit the version bump ---
+    cd "$PROJECT_ROOT"
+    git add "${POMS[@]}"
+    git diff --cached --quiet || git commit -m "release: ${VERSION}"
+fi
 
 # --- Build / Deploy ---
 if [[ "$DRY_RUN" == true ]]; then
@@ -108,13 +121,16 @@ fi
 
 cd "$JAVA_DIR"
 if ! ./mvnw clean "$GOAL" -Prelease -pl '!libfindchars-csv,!libfindchars-examples,!libfindchars-bench'; then
-    info "Build failed — version commit remains, fix and retry or reset"
+    if [[ "$DRY_RUN" == true ]]; then
+        info "Dry run build failed — POM versions restored on exit"
+    else
+        info "Build failed — version commit remains, fix and retry or reset"
+    fi
     exit 1
 fi
 
 if [[ "$DRY_RUN" == true ]]; then
-    info "Dry run complete."
-    info "Note: version commit created. Run 'git reset HEAD~1' to undo if needed."
+    info "Dry run complete — POM versions restored on exit."
     exit 0
 fi
 

@@ -15,8 +15,13 @@ permissions:
 
 jobs:
   java:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        java: ['25', '26']
+    runs-on: ${{ matrix.os }}
+    name: java (${{ matrix.os }}, jdk${{ matrix.java }})
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: java
@@ -24,16 +29,29 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
         with:
-          java-version: '25-ea'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
+      # Linux needs the Z3 natives downloaded; macOS uses the ones bundled in
+      # the javasmt-solver-z3 artifact. Version comes from the pom property so
+      # Dependabot bumps cannot drift from CI.
       - name: Download Z3 native libraries
+        if: runner.os == 'Linux'
         run: |
-          Z3_VERSION=4.16.0
+          Z3_VERSION=$(./mvnw -q help:evaluate -Dexpression=javasmt-solver-z3.version -DforceStdout)
           BASE_URL="https://repo.maven.apache.org/maven2/org/sosy-lab/javasmt-solver-z3/${Z3_VERSION}"
           mkdir -p native
           curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3-x64.so" -o native/libz3.so
           curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3java-x64.so" -o native/libz3java.so
-      - run: LD_LIBRARY_PATH=$PWD/native ./mvnw verify
+      - name: Build and test
+        if: runner.os == 'Linux'
+        run: LD_LIBRARY_PATH=$PWD/native ./mvnw verify
+      - name: Build and test
+        if: runner.os == 'macOS'
+        run: ./mvnw verify
+      # Prove the release profile (source + javadoc jars) builds, without GPG.
+      - name: Release profile dry-run
+        if: runner.os == 'Linux' && matrix.java == '25'
+        run: ./mvnw -q -Prelease -Dgpg.skip=true -DskipTests package -pl libfindchars-api,libfindchars-compiler -am
 
   rust:
     strategy:
@@ -43,9 +61,11 @@ jobs:
             runner: ubuntu-latest
           - target: aarch64
             runner: ubuntu-24.04-arm
+          - target: aarch64-macos
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     name: rust (${{ matrix.target }})
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: rust
@@ -58,5 +78,35 @@ jobs:
           key: ${{ matrix.target }}
           cache-targets: true
           cache-all-crates: true
+      - run: cargo fmt --check
       - run: cargo test -p findchars -p findchars-csv
+      - run: cargo test -p findchars-solver -- --skip auto_split_many
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Packaging dry-run on one leg: proves the crates publish cleanly
+      # (findchars/findchars-csv use --no-verify because their path deps are
+      # not on crates.io until the solver publishes first).
+      - name: Package dry-run
+        if: matrix.target == 'x86_64'
+        run: |
+          cargo publish --dry-run -p findchars-solver
+          cargo package --no-verify -p findchars -p findchars-csv
+
+  rust-msrv:
+    runs-on: ubuntu-latest
+    name: rust (msrv 1.94)
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.94'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: msrv
+          cache-targets: true
+          cache-all-crates: true
+      - run: cargo check --workspace --all-targets

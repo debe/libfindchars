@@ -20,6 +20,13 @@ cd java && ./mvnw test
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home
 ```
 
+## Running examples
+
+```bash
+cd java && ./mvnw -pl libfindchars-examples -am compile
+./mvnw -pl libfindchars-examples exec:exec -Dexample=org.knownhosts.libfindchars.examples.FindLiteralsAndPositions
+```
+
 ## Gotchas
 
 - `--add-modules=jdk.incubator.vector` is required for compilation *and* test execution
