@@ -136,10 +136,12 @@ if [[ "$DRY_RUN" == true ]]; then
         --manifest-path "$RUST_DIR/findchars-solver/Cargo.toml"
     # findchars and findchars-csv depend on workspace crates not yet on crates.io,
     # so a verify build would need them published. '--no-verify' skips that build
-    # while still validating manifest metadata, the file list, and packaging.
-    cargo package --no-verify --allow-dirty \
+    # and '--exclude-lockfile' skips the packaged-lockfile resolution (which would
+    # also demand the deps exist in the index) while still validating manifest
+    # metadata, the file list, and packaging.
+    cargo package --no-verify --exclude-lockfile --allow-dirty \
         --manifest-path "$RUST_DIR/findchars/Cargo.toml"
-    cargo package --no-verify --allow-dirty \
+    cargo package --no-verify --exclude-lockfile --allow-dirty \
         --manifest-path "$RUST_DIR/findchars-csv/Cargo.toml"
     info "Dry run complete — rust/Cargo.toml and rust/Cargo.lock restored on exit."
     exit 0

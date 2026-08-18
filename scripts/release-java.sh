@@ -66,23 +66,24 @@ if ! git -C "$PROJECT_ROOT" diff --quiet || ! git -C "$PROJECT_ROOT" diff --cach
     error "Working tree has uncommitted changes. Commit or stash first."
 fi
 
-# GPG key available
+# GPG key available (release profile signs even on dry-run)
 if ! gpg --list-secret-keys --keyid-format SHORT 2>/dev/null | grep -q sec; then
     error "No GPG secret key found. Import your signing key first."
 fi
 
-# Central credentials in settings.xml
-if ! grep -q '<id>central</id>' ~/.m2/settings.xml 2>/dev/null; then
-    error "No <server id=\"central\"> found in ~/.m2/settings.xml"
-fi
-
-# gh CLI authenticated
-if ! gh auth status >/dev/null 2>&1; then
-    error "GitHub CLI not authenticated. Run 'gh auth login' first."
-fi
-
-# Check tag doesn't already exist (unless dry-run)
+# Upload/release prerequisites are only needed for a real release
 if [[ "$DRY_RUN" == false ]]; then
+    # Central credentials in settings.xml
+    if ! grep -q '<id>central</id>' ~/.m2/settings.xml 2>/dev/null; then
+        error "No <server id=\"central\"> found in ~/.m2/settings.xml"
+    fi
+
+    # gh CLI authenticated
+    if ! gh auth status >/dev/null 2>&1; then
+        error "GitHub CLI not authenticated. Run 'gh auth login' first."
+    fi
+
+    # Tag must not already exist
     if git -C "$PROJECT_ROOT" rev-parse "v${VERSION}" >/dev/null 2>&1; then
         error "Tag v${VERSION} already exists."
     fi

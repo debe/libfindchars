@@ -83,13 +83,13 @@ jobs:
       - run: cargo test -p findchars-solver -- --skip auto_split_many
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # Packaging dry-run on one leg: proves the crates publish cleanly
-      # (findchars/findchars-csv use --no-verify because their path deps are
-      # not on crates.io until the solver publishes first).
+      # (findchars/findchars-csv use --no-verify --exclude-lockfile because
+      # their path deps are not on crates.io until the solver publishes first).
       - name: Package dry-run
         if: matrix.target == 'x86_64'
         run: |
           cargo publish --dry-run -p findchars-solver
-          cargo package --no-verify -p findchars -p findchars-csv
+          cargo package --no-verify --exclude-lockfile -p findchars -p findchars-csv
 
   rust-msrv:
     runs-on: ubuntu-latest
