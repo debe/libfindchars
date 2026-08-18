@@ -30,5 +30,5 @@ cd java && ./mvnw -pl libfindchars-examples -am compile
 ## Gotchas
 
 - `--add-modules=jdk.incubator.vector` is required for compilation *and* test execution
-- Z3 native libraries are bundled via `javasmt-solver-z3` on macOS; CI downloads them separately for Linux
+- The `javasmt-solver-z3` jar does NOT bundle the Z3 native library. On this machine it loads from `~/Library/Java/Extensions/{libz3,libz3java}.dylib` (on the JVM's default `java.library.path`); CI downloads the platform classifier from Maven Central and passes `-Dz3.argline=-Djava.library.path=...` (macOS) or `LD_LIBRARY_PATH` (Linux)
 - When running bench tests standalone, build the csv module first or use `-am` from the reactor root

@@ -12,6 +12,9 @@
 
     <properties>
         <javasmt-solver-z3.version>4.16.0</javasmt-solver-z3.version>
+        <!-- Extra surefire JVM args; CI overrides this to point
+             java.library.path at downloaded Z3 natives. -->
+        <z3.argline></z3.argline>
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
         <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
@@ -112,7 +115,7 @@
 				    <artifactId>maven-surefire-plugin</artifactId>
 	                <version>3.5.5</version>
 				    <configuration>
-				      <argLine>--add-modules=jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
+				      <argLine>--add-modules=jdk.incubator.vector --enable-native-access=ALL-UNNAMED ${z3.argline}</argLine>
 				    </configuration>
 				   <dependencies>
 	                <dependency>

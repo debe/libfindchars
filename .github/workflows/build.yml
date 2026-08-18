@@ -16,6 +16,7 @@ permissions:
 jobs:
   java:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         java: ['25', '26']
@@ -31,23 +32,29 @@ jobs:
         with:
           java-version: ${{ matrix.java }}
           distribution: 'temurin'
-      # Linux needs the Z3 natives downloaded; macOS uses the ones bundled in
-      # the javasmt-solver-z3 artifact. Version comes from the pom property so
-      # Dependabot bumps cannot drift from CI.
+      # The javasmt-solver-z3 jar does not bundle the native library — CI
+      # downloads the platform classifier from Maven Central. Version comes
+      # from the pom property so Dependabot bumps cannot drift from CI.
       - name: Download Z3 native libraries
-        if: runner.os == 'Linux'
         run: |
           Z3_VERSION=$(./mvnw -q help:evaluate -Dexpression=javasmt-solver-z3.version -DforceStdout)
           BASE_URL="https://repo.maven.apache.org/maven2/org/sosy-lab/javasmt-solver-z3/${Z3_VERSION}"
           mkdir -p native
-          curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3-x64.so" -o native/libz3.so
-          curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3java-x64.so" -o native/libz3java.so
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3-x64.so" -o native/libz3.so
+            curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3java-x64.so" -o native/libz3java.so
+          else
+            curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3-arm64.dylib" -o native/libz3.dylib
+            curl -sL "${BASE_URL}/javasmt-solver-z3-${Z3_VERSION}-libz3java-arm64.dylib" -o native/libz3java.dylib
+          fi
       - name: Build and test
         if: runner.os == 'Linux'
         run: LD_LIBRARY_PATH=$PWD/native ./mvnw verify
+      # macOS: DYLD_LIBRARY_PATH is unreliable under SIP, so the natives are
+      # handed to surefire via java.library.path instead.
       - name: Build and test
         if: runner.os == 'macOS'
-        run: ./mvnw verify
+        run: ./mvnw verify "-Dz3.argline=-Djava.library.path=$PWD/native"
       # Prove the release profile (source + javadoc jars) builds, without GPG.
       - name: Release profile dry-run
         if: runner.os == 'Linux' && matrix.java == '25'
