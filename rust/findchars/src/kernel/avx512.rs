@@ -48,8 +48,16 @@ pub(crate) unsafe fn find_avx512(
         while offset + VBS <= len {
             let chunk = _mm512_loadu_si512(data.as_ptr().add(offset) as *const _);
             count = process_chunk(
-                engine, data, chunk, low_mask, offset, VBS,
-                has_filter, &mut filter_state, storage, count,
+                engine,
+                data,
+                chunk,
+                low_mask,
+                offset,
+                VBS,
+                has_filter,
+                &mut filter_state,
+                storage,
+                count,
             );
             offset += VBS;
         }
@@ -62,8 +70,16 @@ pub(crate) unsafe fn find_avx512(
             let chunk = _mm512_loadu_si512(buf.as_ptr() as *const _);
             let prev_count = storage.len();
             count = process_chunk(
-                engine, data, chunk, low_mask, offset, remaining,
-                has_filter, &mut filter_state, storage, count,
+                engine,
+                data,
+                chunk,
+                low_mask,
+                offset,
+                remaining,
+                has_filter,
+                &mut filter_state,
+                storage,
+                count,
             );
             let valid_end = len as u32;
             while storage.len() > prev_count && *storage.positions.last().unwrap() >= valid_end {
@@ -111,13 +127,19 @@ unsafe fn process_chunk(
             let zero = _mm512_setzero_si512();
             let mut rounds = [zero; 4];
             rounds[0] = r0;
-            for (r, slot) in rounds.iter_mut().enumerate().take(engine.max_rounds).skip(1) {
+            for (r, slot) in rounds
+                .iter_mut()
+                .enumerate()
+                .take(engine.max_rounds)
+                .skip(1)
+            {
                 let shifted = load_shifted_avx512(data, base_offset + r);
                 *slot = apply_round_avx512(engine, shifted, r, low_mask);
             }
 
             // gateAscii: keep round-0 results only at ASCII positions.
-            let ascii_k = _mm512_cmpeq_epi8_mask(classify, _mm512_set1_epi8(utf8::CLASSIFY_ASCII as i8));
+            let ascii_k =
+                _mm512_cmpeq_epi8_mask(classify, _mm512_set1_epi8(utf8::CLASSIFY_ASCII as i8));
             let mut acc = _mm512_maskz_mov_epi8(ascii_k, r0);
 
             // gate each charspec: classify == byte_len AND every round literal matches.
@@ -153,15 +175,18 @@ unsafe fn process_chunk(
         // Apply chunk filter — inline SIMD path for known filters
         match engine.inline_filter {
             InlineFilter::CsvQuote { quote_lit } => {
-                accumulator = csv_quote_filter_avx512(
-                    accumulator, quote_lit, filter_state,
-                );
+                accumulator = csv_quote_filter_avx512(accumulator, quote_lit, filter_state);
             }
             InlineFilter::None if has_filter => {
                 // Generic scalar callback fallback
                 let mut acc_bytes = [0u8; VBS];
                 _mm512_storeu_si512(acc_bytes.as_mut_ptr() as *mut _, accumulator);
-                (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
+                (engine.filter_fn)(
+                    &mut acc_bytes[..chunk_len],
+                    filter_state,
+                    &engine.filter_literals,
+                    chunk_len,
+                );
                 accumulator = _mm512_loadu_si512(acc_bytes.as_ptr() as *const _);
             }
             InlineFilter::None => {}

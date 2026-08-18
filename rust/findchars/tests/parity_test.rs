@@ -4,11 +4,7 @@
 use findchars::{EngineBuilder, MatchStorage, SimdBackend};
 
 /// Helper: build same engine config on two backends, run on same data, compare.
-fn assert_parity(
-    name: &str,
-    setup: impl Fn(EngineBuilder) -> EngineBuilder,
-    data: &[u8],
-) {
+fn assert_parity(name: &str, setup: impl Fn(EngineBuilder) -> EngineBuilder, data: &[u8]) {
     let scalar_result = setup(EngineBuilder::new())
         .backend(SimdBackend::Scalar)
         .build()
@@ -41,7 +37,11 @@ fn assert_parity(
         );
         // Literal values may differ between backends (different solver runs),
         // but both should be non-zero at the same positions.
-        assert_ne!(avx2_view.literal(i), 0, "{name}: avx2 literal is zero at index {i}");
+        assert_ne!(
+            avx2_view.literal(i),
+            0,
+            "{name}: avx2 literal is zero at index {i}"
+        );
     }
 }
 
@@ -104,11 +104,7 @@ fn parity_range_plus_shuffle() {
 
 #[test]
 fn parity_empty() {
-    assert_parity(
-        "empty",
-        |b| b.codepoints("comma", b","),
-        b"",
-    );
+    assert_parity("empty", |b| b.codepoints("comma", b","), b"");
 }
 
 // --- No matches ---
@@ -162,13 +158,13 @@ fn parity_all_bytes() {
 fn parity_large_data() {
     let mut data = Vec::with_capacity(1024);
     for i in 0..1024 {
-        data.push(if i % 7 == 0 { b',' } else { b'a' + (i % 26) as u8 });
+        data.push(if i % 7 == 0 {
+            b','
+        } else {
+            b'a' + (i % 26) as u8
+        });
     }
-    assert_parity(
-        "1kb_sparse_commas",
-        |b| b.codepoints("comma", b","),
-        &data,
-    );
+    assert_parity("1kb_sparse_commas", |b| b.codepoints("comma", b","), &data);
 }
 
 // --- Dense matches ---
@@ -177,11 +173,7 @@ fn parity_large_data() {
 fn parity_dense_matches() {
     // Every byte is a target
     let data = vec![b','; 100];
-    assert_parity(
-        "all_commas",
-        |b| b.codepoints("comma", b","),
-        &data,
-    );
+    assert_parity("all_commas", |b| b.codepoints("comma", b","), &data);
 }
 
 // --- Multiple distinct literal groups ---

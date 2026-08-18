@@ -4,11 +4,11 @@
 //! multi-byte UTF-8 codepoints (2/3/4-byte sequences).
 
 /// UTF-8 byte classification values.
-pub const CLASSIFY_ASCII: u8 = 1;      // 0x00–0x7F
+pub const CLASSIFY_ASCII: u8 = 1; // 0x00–0x7F
 pub const CLASSIFY_CONTINUATION: u8 = 0; // 0x80–0xBF
-pub const CLASSIFY_LEAD2: u8 = 2;      // 0xC0–0xDF
-pub const CLASSIFY_LEAD3: u8 = 3;      // 0xE0–0xEF
-pub const CLASSIFY_LEAD4: u8 = 4;      // 0xF0–0xF7
+pub const CLASSIFY_LEAD2: u8 = 2; // 0xC0–0xDF
+pub const CLASSIFY_LEAD3: u8 = 3; // 0xE0–0xEF
+pub const CLASSIFY_LEAD4: u8 = 4; // 0xF0–0xF7
 
 /// 16-entry classification table indexed by high nibble (byte >> 4).
 ///
@@ -20,10 +20,10 @@ pub const CLASSIFY_LEAD4: u8 = 4;      // 0xF0–0xF7
 /// - 0xF: 4-byte lead (4)
 pub const CLASSIFY_TABLE: [u8; 16] = [
     1, 1, 1, 1, 1, 1, 1, 1, // 0x0_–0x7_: ASCII
-    0, 0, 0, 0,             // 0x8_–0xB_: continuation
-    2, 2,                   // 0xC_–0xD_: 2-byte lead
-    3,                       // 0xE_: 3-byte lead
-    4,                       // 0xF_: 4-byte lead
+    0, 0, 0, 0, // 0x8_–0xB_: continuation
+    2, 2, // 0xC_–0xD_: 2-byte lead
+    3, // 0xE_: 3-byte lead
+    4, // 0xF_: 4-byte lead
 ];
 
 /// Classify a single byte by its UTF-8 role.

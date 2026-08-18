@@ -138,8 +138,12 @@ fn utf8_007_shared_lead_bytes() {
     let mut found_e = false;
     let mut found_o = false;
     for i in 0..view.len() {
-        if view.literal(i) == e_lit { found_e = true; }
-        if view.literal(i) == o_lit { found_o = true; }
+        if view.literal(i) == e_lit {
+            found_e = true;
+        }
+        if view.literal(i) == o_lit {
+            found_o = true;
+        }
     }
     assert!(found_e, "é not found");
     assert!(found_o, "ô not found");
@@ -167,8 +171,12 @@ fn mixed_ascii_and_multibyte() {
     let mut comma_count = 0;
     let mut e_count = 0;
     for i in 0..view.len() {
-        if view.literal(i) == comma_lit { comma_count += 1; }
-        if view.literal(i) == e_lit { e_count += 1; }
+        if view.literal(i) == comma_lit {
+            comma_count += 1;
+        }
+        if view.literal(i) == e_lit {
+            e_count += 1;
+        }
     }
     assert_eq!(comma_count, 2, "expected 2 commas");
     assert_eq!(e_count, 3, "expected 3 é characters (café + résumé)");
@@ -191,7 +199,10 @@ fn utf8_no_false_positives_at_continuations() {
 
     assert_eq!(view.len(), 1, "should only match at lead byte position");
     let pos = view.position(0) as usize;
-    assert_eq!(data[pos], 0xC3, "should match at lead byte, not continuation");
+    assert_eq!(
+        data[pos], 0xC3,
+        "should match at lead byte, not continuation"
+    );
 }
 
 // --- Parity: scalar vs reference scan for multi-byte ---
@@ -211,5 +222,9 @@ fn utf8_parity_vs_reference() {
     // Count é occurrences by scanning UTF-8 manually
     let text = "héllo wörld café résumé";
     let expected_count = text.chars().filter(|&c| c == 'é').count();
-    assert_eq!(view.len(), expected_count, "match count should equal char count");
+    assert_eq!(
+        view.len(),
+        expected_count,
+        "match count should equal char count"
+    );
 }

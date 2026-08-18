@@ -49,7 +49,19 @@ pub(crate) unsafe fn find_avx2(
 
         while offset + VBS <= len {
             let chunk = _mm256_loadu_si256(data.as_ptr().add(offset) as *const __m256i);
-            count = process_chunk_avx2(engine, data, chunk, low_mask, zero, offset, VBS, has_filter, &mut filter_state, storage, count);
+            count = process_chunk_avx2(
+                engine,
+                data,
+                chunk,
+                low_mask,
+                zero,
+                offset,
+                VBS,
+                has_filter,
+                &mut filter_state,
+                storage,
+                count,
+            );
             offset += VBS;
         }
 
@@ -59,7 +71,19 @@ pub(crate) unsafe fn find_avx2(
             buf[..remaining].copy_from_slice(&data[offset..]);
             let chunk = _mm256_loadu_si256(buf.as_ptr() as *const __m256i);
             let prev_count = storage.len();
-            count = process_chunk_avx2(engine, data, chunk, low_mask, zero, offset, remaining, has_filter, &mut filter_state, storage, count);
+            count = process_chunk_avx2(
+                engine,
+                data,
+                chunk,
+                low_mask,
+                zero,
+                offset,
+                remaining,
+                has_filter,
+                &mut filter_state,
+                storage,
+                count,
+            );
             let valid_end = len as u32;
             while storage.len() > prev_count && *storage.positions.last().unwrap() >= valid_end {
                 storage.positions.pop();
@@ -105,7 +129,12 @@ unsafe fn process_chunk_avx2(
             // max_rounds <= 4 (longest UTF-8 sequence), so the array always fits.
             let mut rounds = [zero; 4];
             rounds[0] = r0;
-            for (r, slot) in rounds.iter_mut().enumerate().take(engine.max_rounds).skip(1) {
+            for (r, slot) in rounds
+                .iter_mut()
+                .enumerate()
+                .take(engine.max_rounds)
+                .skip(1)
+            {
                 let shifted = load_shifted_avx2(data, base_offset + r);
                 *slot = apply_round_avx2(engine, shifted, r, low_mask, zero);
             }
@@ -152,7 +181,12 @@ unsafe fn process_chunk_avx2(
             InlineFilter::None if has_filter => {
                 let mut acc_bytes = [0u8; VBS];
                 _mm256_storeu_si256(acc_bytes.as_mut_ptr() as *mut __m256i, accumulator);
-                (engine.filter_fn)(&mut acc_bytes[..chunk_len], filter_state, &engine.filter_literals, chunk_len);
+                (engine.filter_fn)(
+                    &mut acc_bytes[..chunk_len],
+                    filter_state,
+                    &engine.filter_literals,
+                    chunk_len,
+                );
                 accumulator = _mm256_loadu_si256(acc_bytes.as_ptr() as *const __m256i);
             }
             InlineFilter::None => {}
@@ -249,8 +283,10 @@ unsafe fn shuffle_avx2(
     low_mask: __m256i,
 ) -> __m256i {
     unsafe {
-        let lo_lut = _mm256_broadcastsi128_si256(_mm_loadu_si128(low_lut.as_ptr() as *const __m128i));
-        let hi_lut = _mm256_broadcastsi128_si256(_mm_loadu_si128(high_lut.as_ptr() as *const __m128i));
+        let lo_lut =
+            _mm256_broadcastsi128_si256(_mm_loadu_si128(low_lut.as_ptr() as *const __m128i));
+        let hi_lut =
+            _mm256_broadcastsi128_si256(_mm_loadu_si128(high_lut.as_ptr() as *const __m128i));
 
         let lo_nibble = _mm256_and_si256(input, low_mask);
         let lo_result = _mm256_shuffle_epi8(lo_lut, lo_nibble);

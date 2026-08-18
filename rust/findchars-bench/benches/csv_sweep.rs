@@ -2,7 +2,7 @@
 //!
 //! Dimensions: column count, quote percentage, average field length.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use findchars::MatchStorage;
 use findchars_bench::generate_csv_data;
 use findchars_csv::CsvParser;
@@ -20,17 +20,13 @@ fn csv_sweep_columns(c: &mut Criterion) {
 
         let parser = CsvParser::builder().has_header(true).build().unwrap();
 
-        group.bench_with_input(
-            BenchmarkId::new("simd_parse", columns),
-            &data,
-            |b, data| {
-                let mut storage = MatchStorage::new(data.len() / 4);
-                b.iter(|| {
-                    let r = parser.parse(black_box(data), &mut storage).unwrap();
-                    black_box(r.row_count())
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("simd_parse", columns), &data, |b, data| {
+            let mut storage = MatchStorage::new(data.len() / 4);
+            b.iter(|| {
+                let r = parser.parse(black_box(data), &mut storage).unwrap();
+                black_box(r.row_count())
+            });
+        });
     }
     group.finish();
 }
@@ -111,5 +107,11 @@ fn csv_backend_compare(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, csv_sweep_columns, csv_sweep_quotes, csv_sweep_field_len, csv_backend_compare);
+criterion_group!(
+    benches,
+    csv_sweep_columns,
+    csv_sweep_quotes,
+    csv_sweep_field_len,
+    csv_backend_compare
+);
 criterion_main!(benches);

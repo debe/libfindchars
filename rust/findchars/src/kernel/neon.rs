@@ -53,8 +53,17 @@ pub(crate) unsafe fn find_neon(
         while offset + VBS <= len {
             let chunk = vld1q_u8(data.as_ptr().add(offset));
             count = process_chunk_neon(
-                engine, data, chunk, low_mask, zero, offset, VBS,
-                has_filter, &mut filter_state, storage, count,
+                engine,
+                data,
+                chunk,
+                low_mask,
+                zero,
+                offset,
+                VBS,
+                has_filter,
+                &mut filter_state,
+                storage,
+                count,
             );
             offset += VBS;
         }
@@ -67,8 +76,17 @@ pub(crate) unsafe fn find_neon(
             let chunk = vld1q_u8(buf.as_ptr());
             let prev_count = storage.len();
             count = process_chunk_neon(
-                engine, data, chunk, low_mask, zero, offset, remaining,
-                has_filter, &mut filter_state, storage, count,
+                engine,
+                data,
+                chunk,
+                low_mask,
+                zero,
+                offset,
+                remaining,
+                has_filter,
+                &mut filter_state,
+                storage,
+                count,
             );
             // Remove matches beyond valid data range
             let valid_end = len as u32;
@@ -104,43 +122,47 @@ unsafe fn process_chunk_neon(
         // Round 0: ASCII literals + multi-byte lead bytes.
         let r0 = apply_round_neon(engine, chunk, 0, low_mask, zero);
 
-        let mut accumulator = if engine.max_rounds > 1
-            && vmaxvq_u8(vandq_u8(chunk, vdupq_n_u8(0x80))) != 0
-        {
-            // --- Multi-byte detection ---
-            let classify_lut = vld1q_u8(utf8::CLASSIFY_TABLE.as_ptr());
-            let classify = classify_neon(chunk, classify_lut);
+        let mut accumulator =
+            if engine.max_rounds > 1 && vmaxvq_u8(vandq_u8(chunk, vdupq_n_u8(0x80))) != 0 {
+                // --- Multi-byte detection ---
+                let classify_lut = vld1q_u8(utf8::CLASSIFY_TABLE.as_ptr());
+                let classify = classify_neon(chunk, classify_lut);
 
-            // rounds[r] = round-r detection of the chunk shifted r bytes ahead,
-            // so a lead byte is gated lane-aligned against its continuations.
-            // max_rounds <= 4 (longest UTF-8 sequence), so the array always fits.
-            let mut rounds = [zero; 4];
-            rounds[0] = r0;
-            for (r, slot) in rounds.iter_mut().enumerate().take(engine.max_rounds).skip(1) {
-                let shifted = load_shifted_neon(data, base_offset + r);
-                *slot = apply_round_neon(engine, shifted, r, low_mask, zero);
-            }
-
-            // gateAscii: keep round-0 results only at ASCII positions.
-            let ascii = vceqq_u8(classify, vdupq_n_u8(utf8::CLASSIFY_ASCII));
-            let mut acc = vandq_u8(r0, ascii);
-
-            // gate each charspec: classify == byte_len AND every round literal matches.
-            for s in 0..engine.charspec_byte_lens.len() {
-                let n = engine.charspec_byte_lens[s];
-                let rl = &engine.charspec_round_lits[s];
-                let mut gate = vceqq_u8(classify, vdupq_n_u8(n as u8));
-                for r in 0..n {
-                    gate = vandq_u8(gate, vceqq_u8(rounds[r], vdupq_n_u8(rl[r])));
+                // rounds[r] = round-r detection of the chunk shifted r bytes ahead,
+                // so a lead byte is gated lane-aligned against its continuations.
+                // max_rounds <= 4 (longest UTF-8 sequence), so the array always fits.
+                let mut rounds = [zero; 4];
+                rounds[0] = r0;
+                for (r, slot) in rounds
+                    .iter_mut()
+                    .enumerate()
+                    .take(engine.max_rounds)
+                    .skip(1)
+                {
+                    let shifted = load_shifted_neon(data, base_offset + r);
+                    *slot = apply_round_neon(engine, shifted, r, low_mask, zero);
                 }
-                let final_lit = vdupq_n_u8(engine.charspec_final_lits[s]);
-                acc = vorrq_u8(acc, vandq_u8(final_lit, gate));
-            }
-            acc
-        } else {
-            // ASCII-only fast path: round 0 is the result.
-            r0
-        };
+
+                // gateAscii: keep round-0 results only at ASCII positions.
+                let ascii = vceqq_u8(classify, vdupq_n_u8(utf8::CLASSIFY_ASCII));
+                let mut acc = vandq_u8(r0, ascii);
+
+                // gate each charspec: classify == byte_len AND every round literal matches.
+                for s in 0..engine.charspec_byte_lens.len() {
+                    let n = engine.charspec_byte_lens[s];
+                    let rl = &engine.charspec_round_lits[s];
+                    let mut gate = vceqq_u8(classify, vdupq_n_u8(n as u8));
+                    for r in 0..n {
+                        gate = vandq_u8(gate, vceqq_u8(rounds[r], vdupq_n_u8(rl[r])));
+                    }
+                    let final_lit = vdupq_n_u8(engine.charspec_final_lits[s]);
+                    acc = vorrq_u8(acc, vandq_u8(final_lit, gate));
+                }
+                acc
+            } else {
+                // ASCII-only fast path: round 0 is the result.
+                r0
+            };
 
         // Range operations: unsigned compare via max/min
         for &(lower, upper, lit) in &engine.ranges {
