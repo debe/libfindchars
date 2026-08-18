@@ -13,7 +13,7 @@ cd java && ./mvnw clean install -DskipTests
 cd java && ./mvnw test
 ```
 
-**Important**: Requires **JDK 25** with `--enable-preview` and `--add-modules=jdk.incubator.vector`. Maven Surefire is pre-configured with these JVM args plus `--enable-native-access`. The build compiles with `--release 25`. Maven coordinates: `org.knownhosts:libfindchars-compiler`.
+**Important**: Requires **JDK 25** with `--add-modules=jdk.incubator.vector` (the incubator Vector API — no preview features, so no `--enable-preview`). Maven Surefire is pre-configured with this plus `--enable-native-access`. The build compiles with `--release 25`; the artifact also runs on JDK 26. Maven coordinates: `org.knownhosts:libfindchars-compiler`.
 
 **macOS note**: Set `JAVA_HOME` explicitly if the default JDK is not 25:
 ```bash

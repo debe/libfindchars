@@ -7,8 +7,23 @@
   </parent>
   
   <artifactId>libfindchars-api</artifactId>
-  <name>libfindchars</name>
+  <name>libfindchars-api</name>
   <description>SIMD optimized runtime</description>
   <dependencies>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Automatic-Module-Name>org.knownhosts.libfindchars.api</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

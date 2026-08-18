@@ -30,9 +30,7 @@ import jdk.incubator.vector.VectorSpecies;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Fork(value = 1, jvmArgs = {
-        "--enable-preview",
-        "--add-modules=jdk.incubator.vector",
-        "--add-modules=ALL-SYSTEM"
+        "--add-modules=jdk.incubator.vector"
 })
 @Warmup(iterations = 3, time = 1)
 @Measurement(iterations = 5, time = 1)

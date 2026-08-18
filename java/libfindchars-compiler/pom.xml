@@ -20,10 +20,11 @@
 	  <artifactId>slf4j-api</artifactId>
 	  <version>2.0.18</version>
 	</dependency>
-	<dependency> 
+	<dependency>
 	  <groupId>ch.qos.logback</groupId>
 	  <artifactId>logback-classic</artifactId>
 	  <version>1.5.32</version>
+	  <scope>test</scope>
 	</dependency>
 <!-- https://mvnrepository.com/artifact/org.openjdk.jmh/jmh-core -->
 	<dependency>
@@ -41,7 +42,22 @@
 	<dependency>
 	    <groupId>org.sosy-lab</groupId>
 	    <artifactId>javasmt-solver-z3</artifactId>
-	    <version>4.16.0</version>
+	    <version>${javasmt-solver-z3.version}</version>
 	</dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Automatic-Module-Name>org.knownhosts.libfindchars.compiler</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>
