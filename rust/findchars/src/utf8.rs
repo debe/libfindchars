@@ -8,7 +8,7 @@ pub const CLASSIFY_ASCII: u8 = 1; // 0x00–0x7F
 pub const CLASSIFY_CONTINUATION: u8 = 0; // 0x80–0xBF
 pub const CLASSIFY_LEAD2: u8 = 2; // 0xC0–0xDF
 pub const CLASSIFY_LEAD3: u8 = 3; // 0xE0–0xEF
-pub const CLASSIFY_LEAD4: u8 = 4; // 0xF0–0xF7
+pub const CLASSIFY_LEAD4: u8 = 4; // 0xF0–0xFF (see the note on CLASSIFY_TABLE)
 
 /// 16-entry classification table indexed by high nibble (byte >> 4).
 ///
@@ -18,6 +18,14 @@ pub const CLASSIFY_LEAD4: u8 = 4; // 0xF0–0xF7
 /// - 0xC–0xD: 2-byte lead (2)
 /// - 0xE: 3-byte lead (3)
 /// - 0xF: 4-byte lead (4)
+///
+/// Classification is *not* validation. Because the index is the high nibble
+/// alone, `0xC0`/`0xC1` classify as 2-byte leads (overlong forms) and the whole
+/// `0xF_` row classifies as a 4-byte lead — including `0xF5`–`0xFF`, which can
+/// never begin a well-formed sequence. Surrogate leads (`0xED`) are likewise
+/// indistinguishable from any other 3-byte lead. libfindchars detects configured
+/// characters in a byte stream that is *assumed* to be well-formed UTF-8; it does
+/// not reject malformed input. Callers needing validation must do it upstream.
 pub const CLASSIFY_TABLE: [u8; 16] = [
     1, 1, 1, 1, 1, 1, 1, 1, // 0x0_–0x7_: ASCII
     0, 0, 0, 0, // 0x8_–0xB_: continuation
@@ -41,7 +49,19 @@ pub fn is_non_ascii(byte: u8) -> bool {
 /// Encode a Unicode codepoint to UTF-8 bytes.
 ///
 /// Returns the bytes and the length (1-4).
+///
+/// # Preconditions
+///
+/// `codepoint` must be a Unicode scalar value: at most `U+10FFFF` and not a
+/// surrogate. The 4-byte branch masks the top bits away, so `0x110000` would
+/// otherwise encode silently as `U+10000`. `EngineBuilder::build` rejects
+/// invalid codepoints before reaching here, matching the Java builder, which
+/// rejects them via `Character.toChars`.
 pub fn encode_utf8(codepoint: u32) -> ([u8; 4], usize) {
+    debug_assert!(
+        char::from_u32(codepoint).is_some(),
+        "encode_utf8 called with non-scalar value U+{codepoint:04X}"
+    );
     let mut buf = [0u8; 4];
     if codepoint <= 0x7F {
         buf[0] = codepoint as u8;
@@ -73,4 +93,74 @@ pub struct CharSpec {
     pub round_literals: Vec<u8>,
     /// The literal byte output when all rounds match.
     pub final_literal: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// UTF8-002 AC1: all 256 byte values classify correctly. The oracle is an
+    /// independent range match rather than the table itself, so a wrong table
+    /// entry cannot pass by agreeing with itself.
+    #[test]
+    fn utf8_002_classifies_all_256_bytes() {
+        fn reference(byte: u8) -> u8 {
+            match byte {
+                0x00..=0x7F => CLASSIFY_ASCII,
+                0x80..=0xBF => CLASSIFY_CONTINUATION,
+                0xC0..=0xDF => CLASSIFY_LEAD2,
+                0xE0..=0xEF => CLASSIFY_LEAD3,
+                0xF0..=0xFF => CLASSIFY_LEAD4,
+            }
+        }
+
+        for byte in 0u16..=255 {
+            let b = byte as u8;
+            assert_eq!(
+                classify_byte(b),
+                reference(b),
+                "byte 0x{b:02x} misclassified"
+            );
+            assert_eq!(is_non_ascii(b), b >= 0x80, "byte 0x{b:02x} ascii flag");
+        }
+    }
+
+    /// UTF8-002: the classifier deliberately admits bytes that cannot begin a
+    /// well-formed sequence. This pins that contract so a future change to make
+    /// it a validator is a conscious one rather than a silent behaviour shift.
+    #[test]
+    fn utf8_002_classification_is_not_validation() {
+        // Overlong 2-byte leads.
+        assert_eq!(classify_byte(0xC0), CLASSIFY_LEAD2);
+        assert_eq!(classify_byte(0xC1), CLASSIFY_LEAD2);
+        // Surrogate lead is an ordinary 3-byte lead.
+        assert_eq!(classify_byte(0xED), CLASSIFY_LEAD3);
+        // Beyond U+10FFFF, and bytes that are never leads at all.
+        for b in [0xF5u8, 0xF7, 0xF8, 0xFE, 0xFF] {
+            assert_eq!(classify_byte(b), CLASSIFY_LEAD4, "byte 0x{b:02x}");
+        }
+    }
+
+    /// UTF8-011: encoding agrees with the standard encoder across the entire
+    /// valid codepoint space — all 1,112,064 scalar values, surrogates excluded.
+    #[test]
+    fn utf8_011_encode_matches_std_for_every_valid_codepoint() {
+        let mut scratch = [0u8; 4];
+        let mut checked = 0u32;
+
+        for cp in 0u32..=0x10FFFF {
+            let Some(ch) = char::from_u32(cp) else {
+                continue; // surrogate range D800-DFFF
+            };
+            let (bytes, len) = encode_utf8(cp);
+            assert_eq!(
+                &bytes[..len],
+                ch.encode_utf8(&mut scratch).as_bytes(),
+                "U+{cp:04X}"
+            );
+            checked += 1;
+        }
+
+        assert_eq!(checked, 1_112_064, "unexpected valid codepoint count");
+    }
 }

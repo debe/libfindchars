@@ -60,12 +60,13 @@ Input data is processed in fixed-size chunks matching the platform's vector byte
 
 **Priority:** MUST
 
-Each input byte is split into low nibble (`byte & 0x0F`) and high nibble (`byte >> 4`). Two 16-entry lookup tables (LUTs) are shuffled by these nibbles. The bitwise AND of the two shuffle results yields the literal byte for target characters, or zero for non-targets.
+Each input byte is split into low nibble (`byte & 0x0F`) and high nibble (`byte >> 4`). Two 16-entry lookup tables (LUTs) are shuffled by these nibbles. The bitwise AND of the two shuffle results yields the literal byte for target characters; for non-targets it yields a value that matches no literal, which a secondary clean LUT then maps to zero.
 
 **Acceptance Criteria:**
 1. For every target byte `b`: `LUT_lo[b & 0xF] AND LUT_hi[b >> 4] == literal(b)`
-2. For every non-target byte `b`: `LUT_lo[b & 0xF] AND LUT_hi[b >> 4] == 0`
-3. Each LUT has exactly 16 entries
+2. For every non-target byte `b`: `(LUT_lo[b & 0xF] AND LUT_hi[b >> 4]) AND (vectorByteSize - 1)` equals no assigned literal — non-target results need not be zero (see [SOLVE-001])
+3. The clean LUT maps every non-literal value to zero, so the accumulator sees zero for non-targets
+4. Each LUT has exactly 16 entries
 
 **Test derivation:** Verify LUT correctness by exhaustive check of all 256 byte values against the target set.
 

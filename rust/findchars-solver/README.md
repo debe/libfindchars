@@ -3,8 +3,11 @@
 Z3-based constraint solver for [findchars](https://crates.io/crates/findchars)
 shuffle-LUT generation. Models character detection as a satisfiability problem:
 it finds two 16-entry shuffle vectors whose AND yields a unique literal byte for
-every target character and zero for everything else, with automatic group
-splitting when a single solve cannot cover the requested character set.
+every target character and, for every non-target, a value that collides with no
+literal — non-target results need not be zero, since a secondary clean LUT zeroes
+them at runtime. Groups split automatically when a single solve cannot cover the
+requested character set, and a deterministic bit-disjoint construction covers any
+set up to `log2(vector_byte_size)` literals without invoking Z3 at all.
 
 This crate is a normal dependency of `findchars`, invoked at
 **engine-construction time** (when `EngineBuilder::build()` runs) — not during

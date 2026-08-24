@@ -27,14 +27,16 @@ When a chunk contains only ASCII bytes (all bytes < 0x80), the engine skips mult
 
 **Priority:** MUST
 
-Each byte in a chunk is classified into one of: ASCII (0x00–0x7F), 2-byte lead (0xC0–0xDF), 3-byte lead (0xE0–0xEF), 4-byte lead (0xF0–0xF7), or continuation (0x80–0xBF). Classification uses a 16-entry lookup table indexed by the high nibble.
+Each byte in a chunk is classified into one of: ASCII (0x00–0x7F), continuation (0x80–0xBF), 2-byte lead (0xC0–0xDF), 3-byte lead (0xE0–0xEF), or 4-byte lead (0xF0–0xFF). Classification uses a 16-entry lookup table indexed by the high nibble.
+
+The 4-byte class spans the whole `0xF_` row, `0xF8`–`0xFF` included, because the high nibble is the only input. Classification is a partition of all 256 byte values, not a well-formedness judgement — see [UTF8-013].
 
 **Acceptance Criteria:**
-1. All 256 byte values are classified correctly
+1. All 256 byte values are classified, and each maps to the class its high nibble selects
 2. The classification table has exactly 16 entries
 3. Classification is performed via vector shuffle (SIMD)
 
-**Test derivation:** Feed all 256 byte values through classification, verify each is categorized correctly.
+**Test derivation:** Feed all 256 byte values through classification and compare against an independently written range-based classifier, so that a wrong table entry cannot pass by agreeing with itself.
 
 ---
 
@@ -190,5 +192,35 @@ Chunks with no matches (all zeros in the result vector) are skipped with zero de
 2. This check maps to a single vector comparison instruction where possible
 
 **Test derivation:** Profile engine on sparse input (few matches), verify decode is not invoked for empty chunks.
+
+---
+
+## Input Contract
+
+#### UTF8-013: Well-Formedness Contract
+
+**Priority:** MUST
+
+libfindchars **detects** configured characters in a byte stream that is *assumed* to be well-formed UTF-8. It does **not** validate, and must not be relied upon to reject malformed input. This is a deliberate design choice: validation would cost work on every byte of the fast path, and callers that need it generally already have it upstream.
+
+Concretely, and by construction of the high-nibble classification in [UTF8-002]:
+
+- `0xC0` and `0xC1` classify as 2-byte leads, so overlong forms are not rejected
+- `0xF5`–`0xF7` classify as 4-byte leads, so codepoints above U+10FFFF are not rejected
+- `0xF8`–`0xFF` also classify as 4-byte leads, though they can never begin a sequence
+- `0xED` is an ordinary 3-byte lead, so UTF-16 surrogates are indistinguishable
+- Continuation bytes are never range-checked
+
+What is guaranteed on malformed input is *predictability*, not rejection: detection is byte-pattern matching gated on lead class, so a match is reported exactly where a configured character's byte sequence occurs, and nowhere else.
+
+The **builder** boundary is stricter than the scan path. A configured codepoint must be a Unicode scalar value — at most U+10FFFF and not a surrogate — and implementations must reject anything else rather than silently encoding it as a different character.
+
+**Acceptance Criteria:**
+1. Scanning malformed input (truncated sequences, stray continuations, overlong forms, surrogate encodings, `0xF5`–`0xFF`) produces no match unless a configured character's exact byte sequence occurs
+2. All SIMD backends agree with the scalar reference on such input
+3. Configuring a surrogate or a codepoint above U+10FFFF is rejected at build time in every implementation
+4. The classification contract above is pinned by test, so making the engine a validator becomes a deliberate change rather than a silent one
+
+**Test derivation:** Fuzz with deliberately malformed byte patterns interleaved with genuine codepoints, comparing every backend against an exact occurrence-scan oracle. Separately, assert that the builder rejects surrogates and out-of-range codepoints.
 
 ---

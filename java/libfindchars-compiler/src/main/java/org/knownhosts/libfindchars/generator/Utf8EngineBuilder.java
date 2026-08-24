@@ -55,7 +55,15 @@ public class Utf8EngineBuilder {
 
     private static final Logger logger = LoggerFactory.getLogger(Utf8EngineBuilder.class);
 
-    private static final byte[] CLASSIFY_TABLE = {
+    /**
+     * UTF-8 classification indexed by high nibble. Package-visible so
+     * {@code Utf8ClassifyTableTest} can check all 256 byte values (UTF8-002).
+     *
+     * <p>Note the whole {@code 0xF_} row maps to the 4-byte class, {@code 0xF8}-{@code 0xFF}
+     * included: the high nibble is the only input. Classification is a partition of
+     * every byte value, not a well-formedness judgement — see UTF8-013.
+     */
+    static final byte[] CLASSIFY_TABLE = {
         1, 1, 1, 1, 1, 1, 1, 1,  // 0x0-0x7: ASCII
         0, 0, 0, 0,              // 0x8-0xB: continuation
         2, 2,                    // 0xC-0xD: 2-byte start

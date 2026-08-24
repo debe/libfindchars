@@ -5,6 +5,10 @@ pub enum FindCharsError {
     #[error("solver failed: {0}")]
     SolverFailed(String),
 
+    /// A solved LUT pair failed the exhaustive 256-byte check.
+    #[error("solver produced an invalid LUT: {0}")]
+    SolverVerificationFailed(String),
+
     /// Too many literals for the platform's vector width.
     #[error("literal namespace exceeded: {configured} configured, max {max}")]
     NamespaceExceeded { configured: usize, max: usize },

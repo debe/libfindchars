@@ -28,13 +28,13 @@ This specification defines the observable contract for **libfindchars**, a high-
 |------|--------|-------|------|
 | [01-core-engine.md](01-core-engine.md) | ENGINE | Engine interface, SIMD detection, literal encoding, storage, match output | 15 |
 | [02-constraint-solver.md](02-constraint-solver.md) | SOLVE | Nibble matrix problem, LUT solving, auto-split, literal assignment | 8 |
-| [03-utf8-pipeline.md](03-utf8-pipeline.md) | UTF8 | Multi-byte detection, classification, gating, range ops, decode | 12 |
+| [03-utf8-pipeline.md](03-utf8-pipeline.md) | UTF8 | Multi-byte detection, classification, gating, range ops, decode, input contract | 13 |
 | [04-vpa-filters.md](04-vpa-filters.md) | VPA | Chunk filters, prefix XOR/sum, carry propagation, working memory | 10 |
 | [05-engine-compilation.md](05-engine-compilation.md) | COMP | Template specialization, constant folding, DCE, inlining, parity | 6 |
 | [06-csv-parser.md](06-csv-parser.md) | CSV | RFC 4180 parsing, two-phase architecture, zero-copy fields | 14 |
 | [07-performance.md](07-performance.md) | PERF | Throughput targets, benchmark methodology, allocation constraints | 8 |
 
-**Total: 73 requirements** (across 7 documents)
+**Total: 74 requirements** (across 7 documents)
 
 ---
 
@@ -42,7 +42,7 @@ This specification defines the observable contract for **libfindchars**, a high-
 
 | Priority | Count | Meaning |
 |----------|-------|---------|
-| MUST     | 56    | Non-negotiable for conformance |
+| MUST     | 57    | Non-negotiable for conformance |
 | SHOULD   | 15    | Expected unless technically infeasible |
 | MAY      | 2     | Optional enhancements |
 
@@ -115,6 +115,7 @@ This specification defines the observable contract for **libfindchars**, a high-
 | UTF8-010 | Combined Round Results | MUST | ENGINE-010 |
 | UTF8-011 | Platform-Adaptive Decode | MUST | ENGINE-013 |
 | UTF8-012 | Fast Rejection | SHOULD | ENGINE-003 |
+| UTF8-013 | Well-Formedness Contract | MUST | UTF8-002 |
 | VPA-001 | Chunk Filter Interface | MUST | ENGINE-003 |
 | VPA-002 | Filter State | MUST | VPA-001 |
 | VPA-003 | Prefix XOR | MUST | VPA-001 |
@@ -155,26 +156,27 @@ benchmarks in `libfindchars-bench`.
 | ENGINE-013 | `Utf8EngineTest` (pinned `SPECIES_256`; rest of suite runs `SPECIES_PREFERRED`) | `parity_test` (scalar 16 B vs AVX2 32 B), `backend_csv_test` |
 | ENGINE-014 | — *(gap)* | `engine_test::engine_014_separate_instances_parallel` |
 | ENGINE-015 | `CsvParserTest.emptyInput`, `CsvParserTest.emptyFileWithHeader` | `engine_test::engine_015_empty_input`, `csv_test::csv_empty_input` |
-| SOLVE-001 | `LiteralCompilerTest` | `solver::tests::solve_single_literal`, `solve_multiple_literals`, `solve_csv_characters` |
+| SOLVE-001 | `LiteralCompilerTest` (both halves, incl. non-targets), `LiteralCompilerTest.verifierRejectsCorruptedMask`, `solveRejectsTargetAboveByteRange` | `solver::tests::solve_single_literal`, `solve_multiple_literals`, `solve_csv_characters`, `verifier_rejects_corrupted_lut`, `auto_split_output_always_verifies` |
 | SOLVE-002 | `FuzzRegexParityTest` (unsolvable rounds fail with a clear error, skipped) | `solver::tests::solve_8_ascii_targets`, `solve_multiple_literals` |
-| SOLVE-003 | `LiteralCompilerTest.testCompile`, `LiteralCompilerTest.testCompileOneBig` | `solver::tests::solve_8_ascii_targets` |
+| SOLVE-003 | `LiteralCompilerTest.testCompile`, `LiteralCompilerTest.testCompileOneBig` | `solver::tests::solve_8_ascii_targets`, `disjoint_capacity_matches_vector_width`, `disjoint_solves_any_byte_set_within_capacity`, `frontier_test::solve_003_twelve_ascii_literals_in_one_group`, `solve_003_frontier_sweep` *(ignored)* |
 | SOLVE-004 | `CompiledEngineTest.compiledEngineWithMultipleGroups`, `BytecodeInlinerTest.inlinedEngineWithMultipleGroups` | `solver::tests::auto_split_two_groups`, `auto_split_many_literals` |
 | SOLVE-005 | `RegexParityTest`, `CompiledEngineTest.compiledEngineWithMultipleGroups` (23 ASCII targets) | `solver::tests::auto_split_many_literals` |
 | SOLVE-006 | — *(gap)* | — *(gap)* |
-| SOLVE-007 | `Utf8EngineTest.literalMapReturnsDistinctBytes`, `LiteralCompilerTest.testCompileMultiple` | `solver::tests::solve_respects_used_literals`, `engine_test::engine_002_distinct_literal_bytes` |
+| SOLVE-007 | `Utf8EngineTest.literalMapReturnsDistinctBytes`, `LiteralCompilerTest.testCompileMultiple` | `solver::tests::solve_respects_used_literals`, `disjoint_skips_used_literals`, `engine_test::engine_002_distinct_literal_bytes` |
 | SOLVE-008 | `CompiledEngineTest.compiledEngineFindsAllMatches`, `Utf8EngineTest.mixedAsciiAndSharedLeadByteMultiByte` | `engine_test::range_detection`, `range_plus_shuffle`, `parity_test::parity_range` |
 | UTF8-001 | `Utf8EngineTest` | `utf8_test::utf8_001_ascii_fast_path` |
-| UTF8-002 | `Utf8EngineTest.twoByteChar`, `FuzzRegexParityTest` | `utf8_test::utf8_004_2byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-002 | `Utf8ClassifyTableTest.classifiesAll256Bytes`, `Utf8EngineTest.twoByteChar`, `FuzzRegexParityTest` | `utf8::tests::utf8_002_classifies_all_256_bytes`, `utf8_test::utf8_004_2byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
 | UTF8-003 | `Utf8EngineTest.twoByteChar`, `noCrossByteContamination`, `noFalsePositivesOnPartialSequence` | `utf8_test::utf8_no_false_positives_at_continuations`, `utf8_004_2byte_detection` |
 | UTF8-004 | `Utf8EngineTest.twoByteChar`, `adjacentMultiByteChars`, `FuzzRegexParityTest` | `utf8_test::utf8_004_2byte_detection`, `utf8_004_2byte_multiple`, `fuzz_parity_test::fuzz_parity_multibyte` |
 | UTF8-005 | `Utf8EngineTest.threeByteChar`, `FuzzRegexParityTest` | `utf8_test::utf8_005_3byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
 | UTF8-006 | `Utf8EngineTest.fourByteChar` | `utf8_test::utf8_006_4byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
 | UTF8-007 | `Utf8EngineTest.sharedLeadByteTwoByteChars`, `multipleSharedLeadByte2ByteChars`, `sharedLeadByte3ByteChars` | `utf8_test::utf8_007_shared_lead_bytes` |
-| UTF8-008 | `Utf8EngineTest.boundarySpanning`, `multiByteAtBufferEnd` | `fuzz_parity_test::fuzz_parity_multibyte` |
+| UTF8-008 | `Utf8EngineTest.boundarySpanning`, `multiByteAtBufferEnd`, `multiByteInFinalAlignedChunk` | `fuzz_parity_test::fuzz_parity_multibyte`, `exhaustive_test::utf8_008_all_2byte_sequences` (plus 3- and 4-byte sweeps, *ignored*) |
 | UTF8-009 | `Utf8EngineTest.mixedAsciiAndSharedLeadByteMultiByte`, `CompiledEngineTest.compiledEngineFindsAllMatches` | `engine_test::range_detection`, `range_plus_shuffle` |
 | UTF8-010 | `Utf8EngineTest.mixedAsciiAndMultiByte`, `RegexParityTest` | `utf8_test::utf8_005_3byte_detection`, `utf8_006_4byte_detection`, `fuzz_parity_test::fuzz_parity_multibyte` |
-| UTF8-011 | — *(gap)* | `utf8_test` (scalar decode), `fuzz_parity_test::fuzz_parity_multibyte` (native decode) |
+| UTF8-011 | — *(gap)* | `utf8::tests::utf8_011_encode_matches_std_for_every_valid_codepoint`, `utf8_test` (scalar decode), `fuzz_parity_test::fuzz_parity_multibyte` (native decode) |
 | UTF8-012 | — *(gap)* | — *(gap)* |
+| UTF8-013 | `Utf8ClassifyTableTest.classificationIsNotValidation`, `Utf8EngineTest.noFalsePositivesOnPartialSequence` | `utf8::tests::utf8_002_classification_is_not_validation`, `fuzz_parity_test::fuzz_parity_multibyte_adversarial` |
 | VPA-001 | `CompiledEngineTest.filteredEngineParityAcrossAllModes` (`apply` vs `applyStatic`), `CsvQuoteFilterTest` | `vpa_test::vpa_001_filter_receives_accumulator` |
 | VPA-002 | `CompiledEngineTest.filteredEngineParityAcrossAllModes`, `CsvQuoteFilterTest.crossChunkQuoteCarryHandled` | `vpa_test::vpa_002_state_reset_between_calls` |
 | VPA-003 | `VpaKernelTest` | `vpa_test::vpa_003_quote_filter_suppresses_commas`, `vpa::prefix::tests` (`test_prefix_xor_*`) |

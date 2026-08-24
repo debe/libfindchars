@@ -58,10 +58,7 @@ impl AsciiFindMask {
 
         // Check targets produce correct literal
         for &(target, expected_lit) in &self.literal_map {
-            let lo = (target & 0x0F) as usize;
-            let hi = ((target >> 4) & 0x0F) as usize;
-            let result = self.low_nibble_mask[lo] & self.high_nibble_mask[hi];
-            if result != expected_lit {
+            if self.and_at(target) != expected_lit {
                 return false;
             }
         }
@@ -75,10 +72,7 @@ impl AsciiFindMask {
             if target_set.contains(&b) {
                 continue;
             }
-            let lo = (b & 0x0F) as usize;
-            let hi = ((b >> 4) & 0x0F) as usize;
-            let result = self.low_nibble_mask[lo] & self.high_nibble_mask[hi];
-            if literal_values.contains(&result) {
+            if literal_values.contains(&self.and_at(b)) {
                 return false;
             }
         }
@@ -88,21 +82,30 @@ impl AsciiFindMask {
     /// Verify with vector_byte_size constraint: non-target AND results masked
     /// to `[0, vector_byte_size)` must not collide with any literal.
     pub fn verify_with_mask(&self, vector_byte_size: usize) -> bool {
+        self.verify_detailed(vector_byte_size).is_ok()
+    }
+
+    /// Same check as [`Self::verify_with_mask`], but names the byte that broke it.
+    ///
+    /// This is the exhaustive 256-value check SOLVE-001 and ENGINE-004 mandate:
+    /// every target byte must AND to its assigned literal, and no non-target byte
+    /// may collide with a literal once masked to `[0, vector_byte_size)`. It runs
+    /// on every solved group, so a satisfiable-but-wrongly-encoded constraint
+    /// system cannot reach the engine.
+    pub fn verify_detailed(&self, vector_byte_size: usize) -> Result<(), String> {
         let mask = (vector_byte_size - 1) as u8;
         let literal_values: std::collections::HashSet<u8> =
             self.literal_map.iter().map(|&(_, lit)| lit).collect();
 
-        // Check targets
         for &(target, expected_lit) in &self.literal_map {
-            let lo = (target & 0x0F) as usize;
-            let hi = ((target >> 4) & 0x0F) as usize;
-            let result = self.low_nibble_mask[lo] & self.high_nibble_mask[hi];
+            let result = self.and_at(target);
             if result != expected_lit {
-                return false;
+                return Err(format!(
+                    "target byte 0x{target:02x} yielded 0x{result:02x}, expected literal 0x{expected_lit:02x}"
+                ));
             }
         }
 
-        // Check non-targets (masked)
         let target_set: std::collections::HashSet<u8> =
             self.literal_map.iter().map(|&(target, _)| target).collect();
 
@@ -111,13 +114,20 @@ impl AsciiFindMask {
             if target_set.contains(&b) {
                 continue;
             }
-            let lo = (b & 0x0F) as usize;
-            let hi = ((b >> 4) & 0x0F) as usize;
-            let result = (self.low_nibble_mask[lo] & self.high_nibble_mask[hi]) & mask;
+            let result = self.and_at(b) & mask;
             if literal_values.contains(&result) {
-                return false;
+                return Err(format!(
+                    "non-target byte 0x{b:02x} collides with literal 0x{result:02x}"
+                ));
             }
         }
-        true
+        Ok(())
+    }
+
+    /// The nibble-matrix AND for a single byte.
+    fn and_at(&self, byte: u8) -> u8 {
+        let lo = (byte & 0x0F) as usize;
+        let hi = ((byte >> 4) & 0x0F) as usize;
+        self.low_nibble_mask[lo] & self.high_nibble_mask[hi]
     }
 }

@@ -139,7 +139,15 @@ public class LiteralCompiler implements AutoCloseable {
 
         List<BooleanFormula> exclusions = buildLiteralExclusions(bvm, boolm, literalVectors, usedLiterals, vectorByteSize);
 
-        return solveAndExtract(bvm, lowNibbles, highNibbles, literalVectors, equations, exclusions);
+        var mask = solveAndExtract(bvm, lowNibbles, highNibbles, literalVectors, equations, exclusions);
+
+        // Check the model against all 256 bytes before letting it out: a
+        // satisfiable answer to the wrong constraint system is still wrong.
+        mask.verify(literalGroup, vectorByteSize).ifPresent(why -> {
+            throw new IllegalStateException("solved LUT failed verification: " + why);
+        });
+
+        return mask;
     }
 
     private void buildMatchingConstraints(AsciiLiteralGroup literalGroup, BitvectorFormulaManager bvm,
