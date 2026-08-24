@@ -158,7 +158,7 @@ benchmarks in `libfindchars-bench`.
 | ENGINE-015 | `CsvParserTest.emptyInput`, `CsvParserTest.emptyFileWithHeader` | `engine_test::engine_015_empty_input`, `csv_test::csv_empty_input` |
 | SOLVE-001 | `LiteralCompilerTest` (both halves, incl. non-targets), `LiteralCompilerTest.verifierRejectsCorruptedMask`, `solveRejectsTargetAboveByteRange` | `solver::tests::solve_single_literal`, `solve_multiple_literals`, `solve_csv_characters`, `verifier_rejects_corrupted_lut`, `auto_split_output_always_verifies` |
 | SOLVE-002 | `FuzzRegexParityTest` (unsolvable rounds fail with a clear error, skipped) | `solver::tests::solve_8_ascii_targets`, `solve_multiple_literals` |
-| SOLVE-003 | `LiteralCompilerTest.testCompile`, `LiteralCompilerTest.testCompileOneBig` | `solver::tests::solve_8_ascii_targets`, `disjoint_capacity_matches_vector_width`, `disjoint_solves_any_byte_set_within_capacity`, `frontier_test::solve_003_twelve_ascii_literals_in_one_group`, `solve_003_frontier_sweep` *(ignored)* |
+| SOLVE-003 | `LiteralCompilerTest.testCompile`, `LiteralCompilerTest.testCompileOneBig` | `solver::tests::solve_8_ascii_targets`, `disjoint_capacity_matches_vector_width`, `disjoint_solves_any_byte_set_within_capacity`, `frontier_test::solve_003_twelve_ascii_literals_in_one_group`, `solve_003_frontier_sweep` *(both ignored by default — Z3 timing is load-dependent)* |
 | SOLVE-004 | `CompiledEngineTest.compiledEngineWithMultipleGroups`, `BytecodeInlinerTest.inlinedEngineWithMultipleGroups` | `solver::tests::auto_split_two_groups`, `auto_split_many_literals` |
 | SOLVE-005 | `RegexParityTest`, `CompiledEngineTest.compiledEngineWithMultipleGroups` (23 ASCII targets) | `solver::tests::auto_split_many_literals` |
 | SOLVE-006 | — *(gap)* | — *(gap)* |
