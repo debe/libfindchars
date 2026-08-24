@@ -55,12 +55,14 @@ fn sweep_sequences(seq_len: usize, offsets: &[Option<usize>]) {
             }
 
             let scalar_view = scalar_engine.engine.find(&buf, &mut scalar_storage);
-            let scalar_positions: Vec<u32> =
-                (0..scalar_view.len()).map(|i| scalar_view.position(i)).collect();
+            let scalar_positions: Vec<u32> = (0..scalar_view.len())
+                .map(|i| scalar_view.position(i))
+                .collect();
 
             let simd_view = simd_engine.engine.find(&buf, &mut simd_storage);
-            let simd_positions: Vec<u32> =
-                (0..simd_view.len()).map(|i| simd_view.position(i)).collect();
+            let simd_positions: Vec<u32> = (0..simd_view.len())
+                .map(|i| simd_view.position(i))
+                .collect();
 
             if scalar_positions != simd_positions {
                 let seq: Vec<u8> = (0..seq_len).map(|k| (value >> (8 * k)) as u8).collect();
