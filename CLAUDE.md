@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 libfindchars is a high-performance character detection library that uses SIMD instructions to find ASCII and multi-byte UTF-8 characters in byte sequences at ~2 GB/s per core. A constraint solver finds optimal shuffle mask configurations at build time; a template-specialized engine executes the operations at runtime.
 
-Key innovation: the solver finds two 16-entry shuffle vectors whose AND yields a unique literal byte for every target character and zero for everything else. A single shuffle group reliably solves ~12 ASCII literals; auto-split doubles that by solving two independent halves.
+Key innovation: the solver finds two 16-entry shuffle vectors whose AND yields a unique literal byte for every target character, and for every non-target a value that collides with no literal (a secondary clean LUT maps those to zero — the solver guarantees non-collision, not zero output). A single shuffle group reliably solves ~12 ASCII literals; auto-split doubles that by solving two independent halves.
 
 ## Specification
 

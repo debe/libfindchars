@@ -215,6 +215,36 @@ class Utf8EngineTest {
     }
 
     @Test
+    void multiByteInFinalAlignedChunk() {
+        // UTF8-008: a buffer whose length is an exact multiple of the vector size,
+        // with a multi-byte codepoint in the *last* chunk. The main loop runs while
+        // i + vectorByteSize <= dataSize, so its final iteration sits at
+        // i = dataSize - vectorByteSize; the round-1 load at i + 1 then needs
+        // dataSize + 1 bytes. boundarySpanning() does not reach this path because
+        // its final chunk is pure ASCII, so hasNonAscii() is false there.
+        var result = Utf8EngineBuilder.builder()
+                .species(SPECIES)
+                .codepoint("eaccute", 0xE9)
+                .build();
+
+        byte[] buf = new byte[VECTOR_SIZE * 2]; // exactly aligned
+        int pos = buf.length - 2;
+        buf[pos] = (byte) 0xC3;
+        buf[pos + 1] = (byte) 0xA9;
+
+        var matchStorage = new MatchStorage(256, VECTOR_SIZE);
+        var view = result.engine().find(MemorySegment.ofArray(buf), matchStorage);
+
+        var positions = new ArrayList<Integer>();
+        for (int i = 0; i < view.size(); i++) {
+            positions.add((int) view.getPositionAt(matchStorage, i));
+        }
+
+        Assertions.assertTrue(positions.contains(pos),
+                "Should find 'é' at " + pos + " in the final aligned chunk");
+    }
+
+    @Test
     void noFalsePositivesOnPartialSequence() {
         // Partial match: [E6, 97, 00] — only first 2 bytes of '日', wrong third byte
         var result = Utf8EngineBuilder.builder()

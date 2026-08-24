@@ -8,6 +8,41 @@ use z3::{Config, SatResult, Solver, with_z3_config};
 
 use crate::literal::{AsciiFindMask, AsciiLiteralGroup, ByteLiteral};
 
+/// Why a solve attempt failed.
+///
+/// [`Self::Timeout`] is deliberately distinct from [`Self::Unsatisfiable`]: Z3
+/// giving up inside its budget is not a proof that no LUT pair exists, and the
+/// two must not be conflated when deciding whether to fall back or split.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SolveError {
+    /// Z3 proved that no valid LUT pair exists for this group.
+    Unsatisfiable,
+    /// Z3 exhausted its time budget without deciding.
+    Timeout,
+    /// A solved model failed the exhaustive 256-byte check.
+    VerificationFailed(String),
+    /// The disjoint fallback ran out of single-bit literal values.
+    DisjointCapacity { needed: usize, available: usize },
+}
+
+impl std::fmt::Display for SolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unsatisfiable => {
+                write!(f, "unsatisfiable: no valid LUT pair exists for this group")
+            }
+            Self::Timeout => write!(f, "solver timed out (result unknown, not unsatisfiable)"),
+            Self::VerificationFailed(why) => write!(f, "solved LUT failed verification: {why}"),
+            Self::DisjointCapacity { needed, available } => write!(
+                f,
+                "disjoint fallback needs {needed} literals, only {available} single-bit values available"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SolveError {}
+
 /// The constraint solver for character detection LUT generation.
 pub struct LiteralCompiler;
 
@@ -25,7 +60,7 @@ impl LiteralCompiler {
         used_literals: &[u8],
         vector_byte_size: usize,
         groups: &[AsciiLiteralGroup],
-    ) -> Result<Vec<AsciiFindMask>, String> {
+    ) -> Result<Vec<AsciiFindMask>, SolveError> {
         let mut results = Vec::with_capacity(groups.len());
         let mut used = used_literals.to_vec();
 
@@ -48,7 +83,7 @@ impl LiteralCompiler {
         used_literals: &[u8],
         vector_byte_size: usize,
         group: &AsciiLiteralGroup,
-    ) -> Result<AsciiFindMask, String> {
+    ) -> Result<AsciiFindMask, SolveError> {
         // Timeout: 5 seconds per solve attempt. If Z3 can't solve in 5s, the
         // group is likely too large and should be split. A fresh config — and
         // thus a fresh implicit context — isolates each group's solve.
@@ -179,17 +214,23 @@ impl LiteralCompiler {
                         }
                     }
 
-                    Ok(AsciiFindMask {
+                    let mask = AsciiFindMask {
                         low_nibble_mask: low_mask,
                         high_nibble_mask: high_mask,
                         literal_map,
                         name_literal_map,
-                    })
+                    };
+
+                    // Z3 answering "sat" only means our constraint system is
+                    // satisfiable — not that we encoded the right one. Check the
+                    // model against all 256 bytes before letting it out.
+                    mask.verify_detailed(vector_byte_size)
+                        .map_err(SolveError::VerificationFailed)?;
+
+                    Ok(mask)
                 }
-                SatResult::Unsat => {
-                    Err("unsatisfiable: no valid LUT pair exists for this group".into())
-                }
-                SatResult::Unknown => Err("solver returned unknown".into()),
+                SatResult::Unsat => Err(SolveError::Unsatisfiable),
+                SatResult::Unknown => Err(SolveError::Timeout),
             }
         })
     }
@@ -207,13 +248,24 @@ impl LiteralCompiler {
         used_literals: &[u8],
         vector_byte_size: usize,
         literals: &[ByteLiteral],
-    ) -> Result<Vec<AsciiFindMask>, String> {
+    ) -> Result<Vec<AsciiFindMask>, SolveError> {
         let group = AsciiLiteralGroup::new(literals.to_vec());
 
         // Try solving as a single group first
         match Self::solve(used_literals, vector_byte_size, &[group]) {
             Ok(masks) => Ok(masks),
-            Err(_) if literals.len() > 1 => {
+            Err(z3_err) => {
+                // Z3 failed — unsatisfiable, out of time, or (in principle) a
+                // model that did not verify. The disjoint construction below is
+                // deterministic and always succeeds at or under its capacity, so
+                // try it before paying for a split. This is what makes small
+                // configurations build-independent of Z3's mood.
+                if let Ok(mask) = Self::solve_disjoint(used_literals, vector_byte_size, literals) {
+                    return Ok(vec![mask]);
+                }
+                if literals.len() == 1 {
+                    return Err(z3_err);
+                }
                 // Split in half and recurse
                 let mid = literals.len() / 2;
                 let (left, right) = literals.split_at(mid);
@@ -237,8 +289,63 @@ impl LiteralCompiler {
                 left_masks.extend(right_masks);
                 Ok(left_masks)
             }
-            Err(e) => Err(e),
         }
+    }
+
+    /// Deterministic fallback: give every literal a pairwise bit-disjoint value
+    /// and OR those bits into the nibble slots its target bytes occupy.
+    ///
+    /// For a target byte `b = (hi, lo)` the AND `low[lo] & high[hi]` is exactly
+    /// that literal's bit, and every other nibble pair intersects to zero — so
+    /// the construction has no cross-terms at all and needs no search. It holds
+    /// for *any* byte set whenever each literal carries a single target byte,
+    /// which is the case for every codepoint entry: `collect_per_round_literals`
+    /// hands each round one byte per literal name. A literal carrying several
+    /// bytes (an ASCII `Codepoints` group) can produce spurious intersections,
+    /// so the result is verified before it is returned either way.
+    ///
+    /// Capacity is the count of unused single-bit values below
+    /// `vector_byte_size`: 6 on AVX-512, 5 on AVX2, 4 on NEON.
+    pub fn solve_disjoint(
+        used_literals: &[u8],
+        vector_byte_size: usize,
+        literals: &[ByteLiteral],
+    ) -> Result<AsciiFindMask, SolveError> {
+        let available: Vec<u8> = (0..8)
+            .map(|bit| 1u8 << bit)
+            .filter(|v| (*v as usize) < vector_byte_size && !used_literals.contains(v))
+            .collect();
+
+        if literals.len() > available.len() {
+            return Err(SolveError::DisjointCapacity {
+                needed: literals.len(),
+                available: available.len(),
+            });
+        }
+
+        let mut low_nibble_mask = [0u8; 16];
+        let mut high_nibble_mask = [0u8; 16];
+        let mut literal_map = Vec::new();
+        let mut name_literal_map = std::collections::HashMap::new();
+
+        for (literal, &value) in literals.iter().zip(available.iter()) {
+            name_literal_map.insert(literal.name.clone(), value);
+            for &target_byte in &literal.chars {
+                low_nibble_mask[(target_byte & 0x0F) as usize] |= value;
+                high_nibble_mask[(target_byte >> 4) as usize] |= value;
+                literal_map.push((target_byte, value));
+            }
+        }
+
+        let mask = AsciiFindMask {
+            low_nibble_mask,
+            high_nibble_mask,
+            literal_map,
+            name_literal_map,
+        };
+        mask.verify_detailed(vector_byte_size)
+            .map_err(SolveError::VerificationFailed)?;
+        Ok(mask)
     }
 }
 
@@ -354,5 +461,122 @@ mod tests {
             .flat_map(|m| m.literal_map.iter().map(|&(t, _)| t))
             .collect();
         assert_eq!(covered.len(), 15, "not all targets covered");
+    }
+
+    /// SOLVE-001: a solved LUT that is quietly corrupted must be rejected.
+    /// Without this, a verifier that always returned `Ok` would be
+    /// indistinguishable from a working one.
+    #[test]
+    fn verifier_rejects_corrupted_lut() {
+        let group = AsciiLiteralGroup::new(vec![ByteLiteral::new("comma", vec![b','])]);
+        let mut mask = LiteralCompiler::solve(&[], 32, &[group]).unwrap().remove(0);
+        assert!(mask.verify_detailed(32).is_ok());
+
+        mask.low_nibble_mask[(b',' & 0x0F) as usize] = 0;
+        let err = mask.verify_detailed(32).unwrap_err();
+        assert!(err.contains("0x2c"), "unexpected diagnosis: {err}");
+    }
+
+    /// SOLVE-003: the disjoint construction's guaranteed capacity is the number
+    /// of single-bit values below the vector width — 6 / 5 / 4 for AVX-512 /
+    /// AVX2 / NEON. This is the floor below which a build never depends on Z3.
+    #[test]
+    fn disjoint_capacity_matches_vector_width() {
+        for (vbs, expected) in [(64usize, 6usize), (32, 5), (16, 4)] {
+            let literals: Vec<ByteLiteral> = (0..expected)
+                .map(|i| ByteLiteral::new(format!("l{i}"), vec![0x41 + i as u8]))
+                .collect();
+            assert!(
+                LiteralCompiler::solve_disjoint(&[], vbs, &literals).is_ok(),
+                "vbs {vbs} should solve {expected} literals"
+            );
+
+            let one_too_many: Vec<ByteLiteral> = (0..expected + 1)
+                .map(|i| ByteLiteral::new(format!("l{i}"), vec![0x41 + i as u8]))
+                .collect();
+            assert_eq!(
+                LiteralCompiler::solve_disjoint(&[], vbs, &one_too_many).unwrap_err(),
+                SolveError::DisjointCapacity {
+                    needed: expected + 1,
+                    available: expected,
+                },
+                "vbs {vbs} should refuse {} literals",
+                expected + 1
+            );
+        }
+    }
+
+    /// SOLVE-003: the floor is universal — it holds for *any* set of target
+    /// bytes, not just convenient ones. Sweep pseudo-random 6-byte sets and
+    /// assert every one solves and verifies without Z3.
+    #[test]
+    fn disjoint_solves_any_byte_set_within_capacity() {
+        let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        for _ in 0..5_000 {
+            let mut bytes: Vec<u8> = Vec::new();
+            while bytes.len() < 6 {
+                let b = (next() & 0xFF) as u8;
+                if !bytes.contains(&b) {
+                    bytes.push(b);
+                }
+            }
+            let literals: Vec<ByteLiteral> = bytes
+                .iter()
+                .enumerate()
+                .map(|(i, &b)| ByteLiteral::new(format!("l{i}"), vec![b]))
+                .collect();
+
+            let mask = LiteralCompiler::solve_disjoint(&[], 64, &literals)
+                .unwrap_or_else(|e| panic!("disjoint failed on {bytes:02x?}: {e}"));
+            mask.verify_detailed(64)
+                .unwrap_or_else(|e| panic!("unverified mask for {bytes:02x?}: {e}"));
+
+            // Every non-target must AND to exactly zero under this construction.
+            let targets: std::collections::HashSet<u8> = bytes.iter().copied().collect();
+            for byte in 0u16..=255 {
+                let b = byte as u8;
+                if targets.contains(&b) {
+                    continue;
+                }
+                let lo = mask.low_nibble_mask[(b & 0x0F) as usize];
+                let hi = mask.high_nibble_mask[(b >> 4) as usize];
+                assert_eq!(lo & hi, 0, "cross-term at 0x{b:02x} for {bytes:02x?}");
+            }
+        }
+    }
+
+    /// SOLVE-007: the fallback must respect literals already handed out.
+    #[test]
+    fn disjoint_skips_used_literals() {
+        let literals: Vec<ByteLiteral> = (0..4)
+            .map(|i| ByteLiteral::new(format!("l{i}"), vec![0x41 + i as u8]))
+            .collect();
+        let mask = LiteralCompiler::solve_disjoint(&[1, 4], 64, &literals).unwrap();
+        for &(_, lit) in &mask.literal_map {
+            assert!(lit != 1 && lit != 4, "reused literal 0x{lit:02x}");
+        }
+        mask.verify_detailed(64).unwrap();
+    }
+
+    /// SOLVE-001: whatever path produced them — Z3, the disjoint fallback, or a
+    /// split — every mask leaving the compiler verifies.
+    #[test]
+    fn auto_split_output_always_verifies() {
+        let literals: Vec<ByteLiteral> = "abcdefghij,.\"; \n"
+            .bytes()
+            .enumerate()
+            .map(|(i, b)| ByteLiteral::new(format!("l{i}"), vec![b]))
+            .collect();
+        let masks = LiteralCompiler::solve_with_auto_split(&[], 64, &literals).unwrap();
+        for mask in &masks {
+            mask.verify_detailed(64).unwrap();
+        }
     }
 }

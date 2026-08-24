@@ -305,3 +305,130 @@ fn fuzz_parity_multibyte() {
         "too many unsolvable rounds: only {solved}/{ROUNDS} solved"
     );
 }
+
+// --- Adversarial multi-byte fuzz (malformed input) ---
+
+/// Byte patterns that are *not* well-formed UTF-8. `fuzz_parity_multibyte`
+/// excludes these by construction — its filler is restricted to `a`-`z` with the
+/// comment "never UTF-8 lead or continuation bytes" — which leaves the entire
+/// malformed-input class untested. libfindchars does not validate UTF-8, so it
+/// must still behave predictably when handed input that is not well-formed.
+const MALFORMED: &[&[u8]] = &[
+    &[0xC3],                   // truncated 2-byte lead
+    &[0xE2, 0x84],             // truncated 3-byte sequence
+    &[0xF0, 0x9F, 0x98],       // truncated 4-byte sequence
+    &[0xA9],                   // stray continuation
+    &[0x80, 0x80, 0x80],       // continuation run with no lead
+    &[0xC0, 0xAF],             // overlong encoding of '/'
+    &[0xC1, 0xBF],             // overlong encoding of DEL
+    &[0xED, 0xA0, 0x80],       // UTF-16 surrogate D800
+    &[0xF5, 0x80, 0x80, 0x80], // above U+10FFFF
+    &[0xF8, 0x88, 0x80, 0x80], // 5-byte form, never a legal lead
+    &[0xFE],                   // never a legal byte
+    &[0xFF],                   // never a legal byte
+];
+
+/// Every start position in `data` where `needle` occurs.
+fn occurrences(data: &[u8], needle: &[u8]) -> Vec<usize> {
+    if needle.is_empty() || data.len() < needle.len() {
+        return Vec::new();
+    }
+    (0..=data.len() - needle.len())
+        .filter(|&i| &data[i..i + needle.len()] == needle)
+        .collect()
+}
+
+/// One adversarial round: build data from malformed patterns, arbitrary bytes,
+/// and genuine codepoints, then check every backend against an exact oracle.
+fn run_adversarial_round(rng: &mut StdRng) -> bool {
+    let selected: Vec<(&str, u32)> = CODEPOINTS.to_vec();
+    let encoded: Vec<(&str, Vec<u8>)> = selected
+        .iter()
+        .map(|&(name, cp)| (name, char::from_u32(cp).unwrap().to_string().into_bytes()))
+        .collect();
+
+    let mut data: Vec<u8> = Vec::new();
+    let segments = rng.random_range(40usize..=200);
+    for _ in 0..segments {
+        match rng.random_range(0u8..4) {
+            // A malformed pattern, verbatim.
+            0 => data.extend_from_slice(MALFORMED[rng.random_range(0..MALFORMED.len())]),
+            // Arbitrary bytes, including leads and continuations.
+            1 => {
+                for _ in 0..rng.random_range(1usize..=6) {
+                    data.push(rng.random_range(0u8..=255));
+                }
+            }
+            // A genuine codepoint.
+            2 => data.extend_from_slice(&encoded[rng.random_range(0..encoded.len())].1),
+            // Ordinary ASCII.
+            _ => {
+                for _ in 0..rng.random_range(1usize..=8) {
+                    data.push(b'a' + rng.random_range(0u8..26));
+                }
+            }
+        }
+    }
+
+    // Oracle: every occurrence of a configured sequence, wherever it lands. The
+    // configured codepoints have distinct lead bytes, so at most one can start at
+    // any given position and the expected set is unambiguous.
+    let mut expected: Vec<(usize, &str)> = Vec::new();
+    for (name, bytes) in &encoded {
+        for pos in occurrences(&data, bytes) {
+            expected.push((pos, name));
+        }
+    }
+    expected.sort_by_key(|&(pos, _)| pos);
+
+    for backend in available_backends() {
+        let mut builder = EngineBuilder::new().backend(backend);
+        for (name, cp) in &selected {
+            builder = builder.codepoint(name, *cp);
+        }
+        let Ok(result) = builder.build() else {
+            return false;
+        };
+
+        let mut storage = MatchStorage::new(expected.len() + 256);
+        let view = result.engine.find(&data, &mut storage);
+
+        assert_eq!(
+            view.len(),
+            expected.len(),
+            "{backend:?}: adversarial match count mismatch"
+        );
+        for (i, &(pos, name)) in expected.iter().enumerate() {
+            assert_eq!(
+                view.position(i) as usize,
+                pos,
+                "{backend:?}: adversarial position mismatch at index {i}"
+            );
+            assert_eq!(
+                view.literal(i),
+                result.literals[name],
+                "{backend:?}: adversarial literal mismatch at index {i} (codepoint '{name}')"
+            );
+        }
+    }
+    true
+}
+
+/// ENGINE-006, UTF8-008: malformed, truncated, overlong and surrogate input must
+/// not produce false positives, and every backend must agree on the result.
+#[test]
+fn fuzz_parity_multibyte_adversarial() {
+    const ROUNDS: u64 = 24;
+    let mut solved = 0u64;
+    for round in 0..ROUNDS {
+        let mut rng = StdRng::seed_from_u64(round.wrapping_add(0xA5A5));
+        if run_adversarial_round(&mut rng) {
+            solved += 1;
+        }
+    }
+    println!("fuzz_parity_multibyte_adversarial: {solved}/{ROUNDS} rounds solved");
+    assert!(
+        solved >= ROUNDS / 2,
+        "too many unsolvable rounds: only {solved}/{ROUNDS} solved"
+    );
+}

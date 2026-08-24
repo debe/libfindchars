@@ -70,6 +70,7 @@ public class Utf8EngineTemplate implements FindEngine {
     @Inline private final int useCompress;
     private final byte[] decodeTmp;
     private final byte[] tailPad;
+    private final byte[] roundPad;
 
     // Species for vector operations
     private final VectorSpecies<Byte> species;
@@ -133,6 +134,7 @@ public class Utf8EngineTemplate implements FindEngine {
         this.useCompress = useCompress;
         this.decodeTmp = new byte[species.vectorByteSize()];
         this.tailPad = new byte[species.vectorByteSize()];
+        this.roundPad = new byte[species.vectorByteSize() + this.maxRounds - 1];
     }
 
     @Override
@@ -157,8 +159,14 @@ public class Utf8EngineTemplate implements FindEngine {
         var litBuf = matchStorage.getLiteralBuffer();
         var posBuf = matchStorage.getPositionsBuffer();
 
-        // Main loop: process aligned chunks
-        while (i + vectorByteSize <= dataSize) {
+        // Main loop: process aligned chunks.
+        //
+        // Round r reads at i + r (see processMainBody), so a chunk may only run
+        // here while the buffer still holds maxRounds-1 bytes of lookahead past
+        // its end. For a single-round (pure ASCII) engine maxRounds is 1 and the
+        // bound folds back to dataSize, leaving the fast path untouched.
+        long mainLimit = dataSize - (maxRounds - 1);
+        while (i + vectorByteSize <= mainLimit) {
             // Grow storage if approaching capacity (one comparison per chunk).
             if (globalCount + vectorByteSize > litBuf.length) {
                 matchStorage.ensureSize(vectorByteSize, globalCount);
@@ -166,6 +174,28 @@ public class Utf8EngineTemplate implements FindEngine {
                 posBuf = matchStorage.getPositionsBuffer();
             }
             globalCount = processMainBody(data, litBuf, posBuf, i, globalCount);
+            i += vectorByteSize;
+        }
+
+        // A full chunk may remain that the main loop had to decline for want of
+        // lookahead — the last chunk of an exactly sized buffer. It goes through
+        // the same zero-padded path as the tail, which is what keeps the shifted
+        // round loads inside the segment. This runs at most once, since
+        // vectorByteSize always exceeds maxRounds - 1, and never at all when
+        // maxRounds is 1.
+        while (i + vectorByteSize <= dataSize) {
+            if (globalCount + vectorByteSize > litBuf.length) {
+                matchStorage.ensureSize(vectorByteSize, globalCount);
+                litBuf = matchStorage.getLiteralBuffer();
+                posBuf = matchStorage.getPositionsBuffer();
+            }
+            var chunk = ByteVector.fromMemorySegment(species, data, i, ByteOrder.nativeOrder());
+
+            if (maxRounds > 1 && Utf8Kernel.hasNonAscii(chunk)) {
+                globalCount = processPadded(data, matchStorage, chunk, i, dataSize, globalCount);
+            } else {
+                globalCount = processSingleChunk(matchStorage, chunk, i, globalCount);
+            }
             i += vectorByteSize;
         }
 
@@ -182,9 +212,7 @@ public class Utf8EngineTemplate implements FindEngine {
             var chunk = ByteVector.fromArray(species, tailPad, 0);
 
             if (maxRounds > 1 && Utf8Kernel.hasNonAscii(chunk)) {
-                byte[] padded = new byte[vectorByteSize + maxRounds - 1];
-                MemorySegment.copy(data, ValueLayout.JAVA_BYTE, i, padded, 0, remaining);
-                globalCount = processTailBody(matchStorage, chunk, padded, i, globalCount);
+                globalCount = processPadded(data, matchStorage, chunk, i, dataSize, globalCount);
             } else {
                 globalCount = processSingleChunk(matchStorage, chunk, i, globalCount);
             }
@@ -261,6 +289,17 @@ public class Utf8EngineTemplate implements FindEngine {
 
         return decodeMatches(accumulator, matchStorage.getLiteralBuffer(),
                 matchStorage.getPositionsBuffer(), globalCount, i);
+    }
+
+    // Run a chunk whose shifted round loads would reach past the end of the
+    // segment. Everything past the input is zero, which matches no configured
+    // literal, so a truncated sequence cannot produce a match.
+    private int processPadded(MemorySegment data, MatchStorage matchStorage,
+                              ByteVector chunk, long i, long dataSize, int globalCount) {
+        int copyLen = (int) Math.min(roundPad.length, dataSize - i);
+        Arrays.fill(roundPad, (byte) 0);
+        MemorySegment.copy(data, ValueLayout.JAVA_BYTE, i, roundPad, 0, copyLen);
+        return processTailBody(matchStorage, chunk, roundPad, i, globalCount);
     }
 
     private int processTailBody(MatchStorage matchStorage,

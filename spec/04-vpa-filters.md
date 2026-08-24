@@ -68,17 +68,19 @@ The algorithm uses the Hillis-Steele pattern in O(log2(vectorByteSize)) steps.
 
 **Priority:** MUST
 
-`prefixSum(vector)` computes the inclusive parallel prefix sum across all lanes of a byte vector, with 8-bit lane saturation. Used for tracking nesting depth (e.g., bracket counting).
+`prefixSum(vector)` computes the inclusive parallel prefix sum across all lanes of a byte vector, with wrapping two's-complement 8-bit lanes. Used for tracking nesting depth (e.g., bracket counting).
+
+Lanes wrap rather than saturate: the Java implementation uses `ByteVector.add` and the Rust one `wrapping_add`, neither of which clamps. Callers must keep depth within `[-128, 127]` over any single chunk.
 
 The algorithm uses the Hillis-Steele pattern in O(log2(vectorByteSize)) steps.
 
 **Acceptance Criteria:**
 1. For input `[1, 0, 1, 0, ...]`, output is `[1, 1, 2, 2, ...]`
 2. For input `[1, -1, 1, -1, ...]` (signed bytes), output is `[1, 0, 1, 0, ...]`
-3. 8-bit saturation: values do not wrap past 127 or below -128
+3. 8-bit lanes wrap on overflow (two's complement); values beyond `[-128, 127]` are the caller's responsibility
 4. Computed in O(log2(V)) vector steps
 
-**Test derivation:** Test with known prefix sum patterns including edge cases near saturation bounds.
+**Test derivation:** Test with known prefix sum patterns, including a chunk whose running total crosses 127 — the result must match wrapping two's-complement arithmetic.
 
 ---
 

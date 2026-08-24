@@ -146,6 +146,16 @@ impl EngineBuilder {
                     });
                 }
                 BuilderEntry::Codepoint { name, codepoint } => {
+                    // Reject non-scalar values here rather than letting
+                    // encode_utf8's masking fold them onto a different character
+                    // (0x110000 would otherwise encode as U+10000). The Java
+                    // builder rejects the same inputs via Character.toChars.
+                    if char::from_u32(*codepoint).is_none() {
+                        return Err(FindCharsError::InvalidConfig(format!(
+                            "'{name}': U+{codepoint:04X} is not a Unicode scalar value \
+                             (surrogate, or above U+10FFFF)"
+                        )));
+                    }
                     let (bytes, len) = utf8::encode_utf8(*codepoint);
                     resolved.push(ResolvedEntry {
                         name: name.clone(),
@@ -198,7 +208,15 @@ impl EngineBuilder {
                 continue;
             }
             let masks = LiteralCompiler::solve_with_auto_split(&all_used, vbs, round_lits)
-                .map_err(FindCharsError::SolverFailed)?;
+                .map_err(|e| FindCharsError::SolverFailed(e.to_string()))?;
+
+            // The solver verifies its own output, but the engine is what actually
+            // consumes these LUTs and `vbs` is authoritative here — re-check at the
+            // boundary so no mask reaches the kernels unverified.
+            for mask in &masks {
+                mask.verify_detailed(vbs)
+                    .map_err(FindCharsError::SolverVerificationFailed)?;
+            }
             // Add newly assigned literals to used set
             for mask in &masks {
                 for &(_, lit) in &mask.literal_map {

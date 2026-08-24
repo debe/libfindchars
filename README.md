@@ -36,7 +36,7 @@ The [specification](spec/00-index.md) (73 requirements) defines the observable c
 
 ## How It Works
 
-* **Z3 nibble-matrix solver.** Each byte splits into low and high nibble (4 bits each), giving a 16x16 lookup grid. [Z3](https://github.com/Z3Prover/z3) finds two 16-entry shuffle vectors whose AND produces a unique literal byte for every target character and zero for everything else. A single group solves ~12 ASCII literals; auto-split doubles that to ~20-24.
+* **Z3 nibble-matrix solver.** Each byte splits into low and high nibble (4 bits each), giving a 16x16 lookup grid. [Z3](https://github.com/Z3Prover/z3) finds two 16-entry shuffle vectors whose AND produces a unique literal byte for every target character, and for everything else a value that collides with no literal — a secondary clean LUT then zeroes those. Small sets skip the solver entirely: a bit-disjoint construction covers any target set up to `log2(vectorByteSize)` literals with no cross-terms at all. A single group solves ~12 ASCII literals; auto-split doubles that to ~20-24.
 
 * **UTF-8 multi-byte detection** via per-round shuffle mask solving across continuation bytes. 2-byte, 3-byte, and 4-byte codepoints are detected by gating lead byte classification with per-round literal matching.
 
