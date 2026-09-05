@@ -16,4 +16,4 @@ categories = ["text-processing", "algorithms"]
 all-features = false
 
 [dependencies]
-z3 = { version = "0.20", features = ["vendored"] }
+z3 = { version = "0.21", features = ["vendored"] }
